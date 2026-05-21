@@ -1,0 +1,3 @@
+# Marcador para que git conserve la carpeta state/.
+# Los archivos .db dentro se ignoran (ver .gitignore).
+# Descarga los datasets con: python scripts/download_datasets_from_hf.py

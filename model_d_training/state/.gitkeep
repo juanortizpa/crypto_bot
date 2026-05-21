@@ -1,0 +1,3 @@
+# Marcador para que git conserve la carpeta model_d_training/state/.
+# Los archivos .db y .csv dentro se ignoran (ver .gitignore raíz).
+# Descarga los datasets con: python ../../scripts/download_datasets_from_hf.py

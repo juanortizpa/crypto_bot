@@ -1,0 +1,42 @@
+{
+  "A_Conservative": {
+    "accuracy": 0.3333333333333333,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "n_folds": 6,
+    "tp": 0,
+    "fp": 0,
+    "fn": 4
+  },
+  "B_Aggressive": {
+    "accuracy": 0.3333333333333333,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "n_folds": 6,
+    "tp": 0,
+    "fp": 0,
+    "fn": 4
+  },
+  "C_Spike": {
+    "accuracy": 0.3333333333333333,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "n_folds": 6,
+    "tp": 0,
+    "fp": 0,
+    "fn": 4
+  },
+  "D_Dip": {
+    "accuracy": 0.3333333333333333,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "n_folds": 6,
+    "tp": 0,
+    "fp": 0,
+    "fn": 4
+  }
+}

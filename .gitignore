@@ -1,0 +1,139 @@
+# ============================================================
+# CRYPTO TRADING BOT - .gitignore
+# Excluye: secrets, datasets pesados, logs, caches
+# Los datasets >100MB se alojan en Hugging Face Datasets
+# ============================================================
+
+# -------- Secrets (NUNCA subir) --------
+.env
+.env.local
+.env.*.local
+.env*.txt
+*.key
+*.pem
+secrets/
+
+# -------- Python --------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# -------- Virtual environments --------
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# -------- IDE --------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# -------- Datasets pesados (alojados en Hugging Face) --------
+# Bases de datos SQLite con histórico de klines (3.5GB + 901MB)
+state/*.db
+state/*.sqlite
+state/*.sqlite3
+state/*-journal
+state/*-shm
+state/*-wal
+model_d_training/state/*.db
+model_d_training/state/*.sqlite
+model_d_training/state/*-journal
+model_d_training/state/*-shm
+model_d_training/state/*-wal
+
+# CSVs / Parquets con features (2GB+)
+state/features_*.csv
+state/klines_*.parquet
+model_d_training/state/features_*.csv
+model_d_training/state/*.parquet
+
+# Mantener los marcadores de carpeta
+!state/.gitkeep
+!model_d_training/state/.gitkeep
+
+# -------- Datos históricos antiguos --------
+state/data_2022.db
+state/data_2024.db
+state/sentiment.db
+state/market_scan.db
+state/market_scan_*.db
+
+# -------- Logs --------
+logs/
+*.log
+*.log.*
+
+# -------- Test/debug --------
+test_*.db
+test_*.py
+debug_*.py
+quick_validation.py
+*_test.pkl
+*_debug.pkl
+
+# -------- Modelos entrenados pesados --------
+models/
+*.pkl
+*.joblib
+*.h5
+*.onnx
+model_d_training/models/
+
+# -------- Resultados intermedios pesados (>10MB) --------
+model_d_training/results/*_extended.csv
+model_d_training/results/grid_all.csv
+
+# -------- Caches --------
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# -------- OS --------
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+*.temp
+
+# -------- Notebooks: ignorar outputs pero permitir el .ipynb --------
+# Si quieres limpiar outputs antes de commit, corre:
+#   jupyter nbconvert --clear-output --inplace notebooks/*.ipynb
+
+# -------- Build artefacts presentación --------
+presentacion/_build/node_modules/
+presentacion/_build/qa/
+presentacion/_build/*.pdf
+presentacion/_build/slide-*.jpg
+
+# -------- Misc --------
+*.md.bak
+.claude/

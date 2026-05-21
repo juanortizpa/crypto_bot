@@ -1,0 +1,91 @@
+{
+  "oos_window_hours": 720,
+  "oos_rows": 6353,
+  "rankings": [
+    {
+      "name": "A. Grid puro",
+      "n": 0,
+      "win_rate": 0,
+      "pf": 0,
+      "total_pnl": 0,
+      "avg_pnl": 0,
+      "max_dd": 0,
+      "score": -999,
+      "combo": {
+        "stop_pct": 0.03,
+        "target_pct": 0.05,
+        "max_hours": 12
+      }
+    },
+    {
+      "name": "C. Hybrid",
+      "n": 0,
+      "win_rate": 0,
+      "pf": 0,
+      "total_pnl": 0,
+      "avg_pnl": 0,
+      "max_dd": 0,
+      "score": -999,
+      "combo": {
+        "stop_pct": 0.03,
+        "target_pct": 0.05,
+        "max_hours": 12
+      }
+    },
+    {
+      "name": "E1. Both Grid+Hyb",
+      "n": 0,
+      "win_rate": 0,
+      "pf": 0,
+      "total_pnl": 0,
+      "avg_pnl": 0,
+      "max_dd": 0,
+      "score": -999,
+      "combo": {
+        "stop_pct": 0.03,
+        "target_pct": 0.05,
+        "max_hours": 12
+      }
+    },
+    {
+      "name": "E2. Any Grid+Hyb",
+      "n": 0,
+      "win_rate": 0,
+      "pf": 0,
+      "total_pnl": 0,
+      "avg_pnl": 0,
+      "max_dd": 0,
+      "score": -999,
+      "combo": {
+        "stop_pct": 0.03,
+        "target_pct": 0.05,
+        "max_hours": 12
+      }
+    }
+  ],
+  "correlations": {
+    "grid_hybrid": 0
+  },
+  "winner": {
+    "name": "A. Grid puro",
+    "n": 0,
+    "win_rate": 0,
+    "pf": 0,
+    "total_pnl": 0,
+    "avg_pnl": 0,
+    "max_dd": 0,
+    "score": -999,
+    "combo": {
+      "stop_pct": 0.03,
+      "target_pct": 0.05,
+      "max_hours": 12
+    }
+  },
+  "deployable": false,
+  "deploy_criteria": {
+    "min_n": 5,
+    "min_wr": 0.4,
+    "min_pf": 1.5,
+    "min_dd": -50.0
+  }
+}

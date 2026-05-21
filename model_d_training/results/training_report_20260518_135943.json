@@ -1,0 +1,92 @@
+{
+  "combo": "s025_t040_h08",
+  "trained_at": "2026-05-18T18:59:43.764679+00:00",
+  "n_features": 49,
+  "n_train": 1793695,
+  "n_val": 384363,
+  "n_test": 384364,
+  "thresholds": {
+    "min_wr": 0.52,
+    "min_pf": 1.4,
+    "min_expectancy": 0.3,
+    "min_trades": 50
+  },
+  "models": [
+    {
+      "name": "xgb",
+      "threshold": 0.8250000000000004,
+      "metrics_val": {
+        "n_trades": 3374,
+        "wr": 0.5921754593953764,
+        "pf": 2.004828691482544,
+        "expectancy": 0.7289746330557453,
+        "sharpe": 17.44196970920222,
+        "avg_pnl": 0.7289745807647705,
+        "total_pnl": 2459.560302734375
+      },
+      "metrics_test": {
+        "n_trades": 3332,
+        "wr": 0.6773709483793517,
+        "pf": 2.8653063774108887,
+        "expectancy": 1.0361255052066793,
+        "sharpe": 26.17339356871141,
+        "avg_pnl": 1.036125659942627,
+        "total_pnl": 3452.37060546875
+      },
+      "passes": true,
+      "reason": "ok",
+      "replaced": true
+    },
+    {
+      "name": "rf",
+      "threshold": 0.6750000000000003,
+      "metrics_val": {
+        "n_trades": 44,
+        "wr": 0.9772727272727273,
+        "pf": 94.8752670288086,
+        "expectancy": 3.4772250191731886,
+        "sharpe": 24.883191542915537,
+        "avg_pnl": 3.4772253036499023,
+        "total_pnl": 152.99790954589844
+      },
+      "metrics_test": {
+        "n_trades": 62,
+        "wr": 0.8709677419354839,
+        "pf": 17.66204833984375,
+        "expectancy": 2.263163028224822,
+        "sharpe": 10.642352316259865,
+        "avg_pnl": 2.263162851333618,
+        "total_pnl": 140.31610107421875
+      },
+      "passes": true,
+      "reason": "ok",
+      "replaced": true
+    },
+    {
+      "name": "hybrid",
+      "threshold": 0.6500000000000002,
+      "metrics_val": {
+        "n_trades": 954,
+        "wr": 0.7274633123689728,
+        "pf": 4.06292724609375,
+        "expectancy": 1.495416060933527,
+        "sharpe": 19.74236261030631,
+        "avg_pnl": 1.4954164028167725,
+        "total_pnl": 1426.627197265625
+      },
+      "metrics_test": {
+        "n_trades": 1207,
+        "wr": 0.49130074565037285,
+        "pf": 2.1343016624450684,
+        "expectancy": 0.5281864880725384,
+        "sharpe": 9.50476303813319,
+        "avg_pnl": 0.528186559677124,
+        "total_pnl": 637.5211791992188
+      },
+      "passes": false,
+      "reason": "WR=0.491 < 0.52",
+      "replaced": false
+    }
+  ],
+  "backup_dir": "C:\\Users\\JUAN\\Documents\\Claude\\Projects\\operacion cripto\\crypto_bot\\model_d_training\\results\\backup_20260518_135943"
+}

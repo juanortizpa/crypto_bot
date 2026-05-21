@@ -1,0 +1,24 @@
+{
+  "model_id": "D_grid_v1",
+  "filters": {
+    "rsi_max": 40,
+    "drawdown_min": -20,
+    "fng_max": 25,
+    "btc_dom_max": 60,
+    "mom_4h_min": 2,
+    "vol_ratio_min": 1.2
+  },
+  "trade": {
+    "stop_pct": 0.03,
+    "target_pct": 0.05,
+    "max_hours": 12
+  },
+  "training_metrics": {
+    "n_trades": 149,
+    "win_rate": 0.4832,
+    "profit_factor": 2.776,
+    "expectancy": 0.7658,
+    "total_pnl_pct": 269.12,
+    "sharpe": 6.361
+  }
+}
