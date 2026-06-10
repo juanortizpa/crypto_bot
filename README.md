@@ -21,8 +21,8 @@ Bot de trading automatizado para criptomonedas en **Binance (Testnet → Mainnet
 
 ## 🎯 Características
 
-✅ **Real-Time Monitoring** - Chequea cada 5 minutos si cerrar trades dinámicamente  
-✅ **13-Factor Gate System** - Análisis técnico + sentimiento macro integrado  
+✅ **Real-Time Monitoring** - Stops/targets duros + cierre dinámico cada 1-5 min  
+✅ **17-Factor Gate System** - Técnico + macro + sentimiento + vetos de riesgo  
 ✅ **6 Competitive Models** - Identifica automáticamente cuál rinde mejor  
 ✅ **Event-Driven Training** - Entrenado con 4.6M klines + 39 eventos globales  
 ✅ **Paper Trading First** - Testnet de Binance antes de mainnet  
@@ -68,8 +68,9 @@ crypto_bot/
 │
 ├── logs/                        # Ejecución (dinámico)
 │
-├── run_crypto_models.py         # ⭐ CLI PRINCIPAL
-├── bot_crypto.py                # Análisis manual
+├── bot_crypto.py                # ⭐ CLI PRINCIPAL (run, report, gate, ...)
+├── run_crypto_models.py         # Flujo alternativo (full + monitor)
+├── smoke_test.py                # Verificación de fixes v1.1
 ├── binance_client.py            # Cliente Binance
 ├── .env                         # API keys (NO subir)
 ├── requirements.txt             # Dependencias
@@ -138,48 +139,69 @@ jupyter notebook notebooks/proyecto_final_ml.ipynb
 
 El notebook reproduce el pipeline de ML del proyecto final (clasificación + regresión con `scikit-learn`, métricas, overfitting check).
 
-### 5. Ejecutar el Bot
+### 5. Verificar la instalación (v1.1)
 
-**Generar predicciones nuevas (1x al día):**
 ```bash
-python run_crypto_models.py full
+python smoke_test.py --network
+# Debe terminar en 0 FAIL
 ```
 
-**Monitorear en tiempo real (corre continuamente cada 5 min):**
+### 6. Ejecutar el Bot
+
+**Modo principal — sesión autónoma (scan + monitor + cierre, todo en uno):**
 ```bash
-python run_crypto_models.py monitor
-# Presiona Ctrl+C para detener
+python bot_crypto.py run --dry-run          # paper trading, sesión de 17h max
+python bot_crypto.py run --hours 6 --dry-run # sesión más corta
+# Ctrl+C para detener
 ```
 
-**Validar datos:**
+**Comandos de consulta:**
 ```bash
-python run_crypto_models.py validate
+python bot_crypto.py report     # expectancy, WR, breakdown por tipo de cierre
+python bot_crypto.py compare    # qué modelo va ganando
+python bot_crypto.py pending    # trades abiertos
+python bot_crypto.py gate BTC   # gate de 16 factores para un par
+python bot_crypto.py risk       # estado del risk guard
 ```
 
-**Ver resumen de rendimiento:**
+**Flujo alternativo (predicciones manuales + monitor separado):**
 ```bash
-python run_crypto_models.py report
+python run_crypto_models.py full      # genera predicciones
+python run_crypto_models.py monitor   # monitor cada 5 min (Ctrl+C para parar)
+python run_crypto_models.py validate  # valida cobertura de datos
 ```
 
 ## 📋 Uso Diario
 
 ```
 9:00 AM
-  └─ python run_crypto_models.py full
-     └─ Genera nuevas predicciones
-
-9:05 AM
-  └─ python run_crypto_models.py monitor
-     └─ Corre continuamente, chequea cada 5 min
+  └─ python bot_crypto.py run --dry-run
+     └─ Sesión autónoma: escanea cada 5 min, monitorea cada 1 min
      └─ Cierra trades automáticamente cuando:
-        ├─ Ganancia >= +3% → WIN (early close)
-        ├─ Pérdida >= -2.5% → LOSS (stop hit)
-        ├─ Momentum invierte → LOSS (gate rojo)
-        └─ Volatilidad colapsa → LOSS
+        ├─ Toca stop          → LOSS (STOP_HIT_HARD)
+        ├─ Toca target        → WIN  (TARGET_HIT)
+        ├─ Señal bajista ≥4/7 → asegura ganancia o corta pérdida (BEAR_SIGNAL_*)
+        ├─ Noticia bearish    → EXIT defensivo (R6)
+        └─ Trade muerto       → EXIT por tiempo/momentum (R1-R8)
 
-8:00 PM
-  └─ Ctrl+C para detener monitor
+Al final del día
+  └─ python bot_crypto.py report
+     └─ Métrica clave: EXPECTANCY neta de fees (no el win rate)
 ```
+
+Ver [GUIA_DIARIA.md](GUIA_DIARIA.md) para el flujo completo.
+
+## 🆕 Novedades v1.1 (2026-06-10)
+
+- **Contabilidad honesta:** path-check con velas 5m (un stop tocado cuenta aunque el precio rebote), comisiones descontadas (±0.25% = outcome `BE`), fin del "expirado +0.01% = WIN".
+- **Stops/targets duros:** `trade_monitor` ahora ejecuta el stop y el target del plan con prioridad sobre las reglas R1-R8 (antes eran decorativos).
+- **Fix de caché congelado:** los monitores limpian el caché de precios en cada ciclo (antes operaban sobre una foto del primer ciclo).
+- **Señal bajista (`bot/short_signal.py`):** score 0-7 con los mismos factores en espejo; veta entradas long y protege trades abiertos.
+- **Guarda de régimen:** con BTC bajista (M1 RED) solo opera el modelo D (Dip Scalper).
+- **Circuit breaker (factor X2):** -5% acumulado en 24h o 4 LOSS seguidos → pausa entradas 12h.
+- **Guard ML:** los `.pkl` entrenados con etiquetas pre-fix se ignoran automáticamente hasta reentrenar.
+- **Análisis direccional:** `python -m model_d_training.train_directional` entrena LONG y SHORT con walk-forward para medir si los factores predicen bajadas.
+- Detalle completo: [AUDITORIA_2026-06-10.md](AUDITORIA_2026-06-10.md)
 
 ## 🎯 Los 6 Modelos
 
@@ -196,34 +218,42 @@ python run_crypto_models.py report
 hoy sabida optimista, y están en re-evaluación. La métrica de referencia desde
 v1.1 es la **expectancy neta de comisiones** (`python bot_crypto.py report`).
 
-## 🔐 Gate de 13 Factores
+## 🔐 Gate de 17 Factores
 
-El bot toma decisiones usando un sistema de semáforos que evalúa 13 factores:
+El bot toma decisiones usando un sistema de semáforos:
 
 ```
 MACRO (Contexto diario):
   ├─ M1: BTC Trend        (SMA20/50 de Bitcoin)
   ├─ M2: Fear & Greed     (Índice 0-100)
   ├─ M3: Volatilidad 1h   (ATR)
+  ├─ M4: Eventos macro    (FOMC, CPI, NFP — veto duro)
   └─ S4: BTC Dominance    (% del mercado)
 
 SHORT-TERM (Timing 1-4h):
-  ├─ S1: Momentum 4h      (SMA20 vs SMA50)
+  ├─ S1: Momentum 4h      (relativo a BTC)
   ├─ S2: Setup técnico    (RSI, MA crossovers)
-  ├─ S3: Volumen 1h       (vs promedio 20d)
+  ├─ S3: Volumen 1h       (vs promedio 20h)
   ├─ T1: Micro-trend      (últimas 6 velas)
   ├─ T2: Buy/Sell Ratio   (volumen comprador)
-  └─ T3: Señal entrada    (pullback o breakout)
+  └─ T3: Señal entrada    (pullback o reversal)
 
 RIESGO:
   ├─ R1: Risk/Reward      (ratio stop/target)
-  └─ R2: Exposición       (máximo de trades abiertos)
+  ├─ R2: Exposición       (máximo de trades abiertos)
+  └─ R3: Sesión 12h       (tiempo restante — veto duro)
 
 SENTIMIENTO (2x peso para crypto):
   └─ N1: Noticias         (keywords + power figures)
+
+VETOS (v1.0/v1.1):
+  ├─ X1: Flash crash/pump (blackout tras extremos — veto duro)
+  └─ X2: Circuit breaker  (racha de pérdidas — veto duro, v1.1)
 ```
 
-**Output:** GREEN (3+ factores), YELLOW (1-2), RED (3+ negativos)
+**Decisión:** EXECUTE_FULL (12+ verdes) / EXECUTE_HALF (10+) / WATCHLIST (6+) / ABORT (3+ rojos o cualquier veto duro)
+
+Además del gate, en v1.1 toda entrada long pasa dos guardas: **régimen** (BTC bajista → solo modelo D) y **señal bajista del par** (score ≥ 4/7 → no entrar).
 
 ## 📊 Pares Entrenados (TOP 20)
 
@@ -232,19 +262,22 @@ SENTIMIENTO (2x peso para crypto):
 
 ⚠️ **IMPORTANTE:** El bot solo funciona bien con estos 20 pares. Expandir a más pares requiere reentrenamiento. Ver [MISMATCH_TRAINING_VS_PREDICCION.md](MISMATCH_TRAINING_VS_PREDICCION.md).
 
-## 🔄 Real-Time Monitoring
+## 🔄 Real-Time Monitoring (v1.1)
 
-El monitor corre cada 5 minutos evaluando condiciones dinámicas de cierre:
+El runner monitorea cada 1 min (modo `run`) o cada 5 min (`monitor`), con niveles duros primero y reglas después:
 
 ```python
-# Si P&L >= +3% → Cierra WIN (no espera al target)
-# Si toca stop (-2.5%) → Cierra LOSS automático
-# Si toca target (+3%) → Cierra WIN automático
-# Si momentum invierte (más RED que GREEN) → Cierra LOSS
-# Si volatilidad colapsa → Cierra LOSS
+# NIVELES DUROS (prioridad absoluta):
+#   precio <= stop   → LOSS (STOP_HIT_HARD)
+#   precio >= target → WIN  (TARGET_HIT)
+# SEÑAL BAJISTA (score >= 4/7 con factores en espejo):
+#   ganando → WIN  (BEAR_SIGNAL_LOCK, asegura antes de la caída)
+#   perdiendo → LOSS (BEAR_SIGNAL_CUT, no espera el stop completo)
+# REGLAS DEFENSIVAS: noticias bearish (R6), blackout macro (R7),
+#   timeout (R8), pérdida profunda (R1), momentum sostenido abajo (R2-R5)
+# Resolución diferida: path-check con velas 5m reconstruye lo que pasó
+#   mientras el monitor no corría (stops tocados no se pierden)
 ```
-
-Esto reemplaza la lógica antigua de cierre por tiempo fijo, permitiendo ganancias más rápidas en mercados volátiles.
 
 ## 📚 Documentación
 
@@ -272,13 +305,13 @@ Esto reemplaza la lógica antigua de cierre por tiempo fijo, permitiendo gananci
 - [ ] Web dashboard
 - [ ] Mainnet deployment
 
-## 📈 Métricas Objetivo (Después de 2-3 semanas)
+## 📈 Métricas Objetivo (Después de 2-3 semanas, contabilidad v1.1)
 
-- Win Rate Global: >75%
-- Win Rate Modelo B: >85%
-- Avg P&L Ganadores: >2.5%
-- Avg P&L Perdedores: >-2.5%
-- Sharpe Ratio: >1.5
+- **Expectancy neta de fees: > 0** (la métrica que manda)
+- Profit factor: > 1.3
+- Win Rate global: > 50% (con avg win ≥ avg loss)
+- Max drawdown: < 15%
+- Trades cerrados: > 30 (mínimo para concluir algo)
 
 ## 🔧 Troubleshooting
 
@@ -307,169 +340,6 @@ Este proyecto es de código abierto. Úsalo libremente para trading/investigaci�
 
 ---
 
-**Última actualización:** 2026-05-15  
-**Versión:** 1.0 (Production Ready)  
+**Última actualización:** 2026-06-10  
+**Versión:** 1.1 — Contabilidad honesta + risk guards ([AUDITORIA_2026-06-10.md](AUDITORIA_2026-06-10.md))  
 **Autor:** Juan (firu)
-
-| Modelo | Nombre | Entrada | Stop | Target | Uso |
-|--------|--------|---------|------|--------|-----|
-| **A** | Scalp Conservador | Gate ≥7, 0 RED | -1.5% | +2.5% | Trades cortos, muy seguros |
-| **B** | Momentum Burst | Gate ≥5, 0 RED, S1 verde | -2% | +4% | Seguir momentum |
-| **C** | News Spike | Gate ≥4, max 1 RED, N1 verde | -2% | +3% | Reaccionar a noticias rápido |
-| **D** | Dip Scalper | Gate ≥3, max 2 RED, F&G<45 | -3% | +6% | Comprar pánico |
-| **E** | Breakout Micro | Gate ≥5, 0 RED, T3 verde | -2.5% | +5% | Breakouts técnicos |
-| **F** | Trend Rider | Gate ≥6, 0 RED, M1 verde | -2% | +4% | Seguir tendencia BTC |
-
-### Meta Model
-Promedia señales de A-F ponderadas por win rate histórico.
-
-## ⚙️ Los 13 Factores del Gate
-
-```
-MACRO (M):
-  M1 - Tendencia BTC dominance
-  M2 - Fear & Greed Index
-  M3 - Volatilidad 24h (ATR)
-
-SETUP (S):
-  S1 - Momentum vs BTC
-  S2 - Setup técnico (MA20, MA50, RSI)
-  S3 - Volumen 24h vs prom 7d
-  S4 - Dominancia BTC
-
-TREND (T):
-  T1 - Tendencia 7 días
-  T2 - Buy/Sell ratio (Binance)
-  T3 - Señal entrada (Pullback o Breakout)
-
-RIESGO (R):
-  R1 - Risk/Reward ratio
-  R2 - Exposición portafolio
-
-NOTICIAS (N):  ← PESO 2X para crypto
-  N1 - Trump/Elon/SEC/ETF/Hacks
-  N2 - On-chain signals (ballenas, NUPL)
-```
-
-**Salida del Gate:**
-- 🟢 GREEN = +1 punto
-- 🟡 YELLOW = 0 puntos  
-- 🔴 RED = -1 punto
-
-Score ≥ threshold (según modelo) → ENTRA
-
-## 📊 Base de Datos
-
-```sqlite
--- state/crypto_predictions.db
-
-CREATE TABLE predictions (
-  id INTEGER PRIMARY KEY,
-  date TEXT,
-  pair TEXT,
-  model TEXT,        -- A, B, C, D, E, F, META
-  signal TEXT,       -- BUY, SELL, HOLD
-  entry_price REAL,
-  stop_pct REAL,
-  target_pct REAL,
-  outcome TEXT,      -- WIN, LOSS, PENDING
-  pnl_pct REAL
-);
-```
-
-Cada mañana:
-1. `run_crypto_models.py` escanea 200 pares
-2. Corre 6 modelos en paralelo
-3. **Guarda predicciones sin comprar** (AUTO_EXECUTE=False)
-4. Cada tarde: resuelve predicciones (cryptos opera 24/7)
-5. Calcula win rate por modelo
-
-## 🛡️ Safety Guards (Testnet/Live)
-
-```python
-MAX_CAPITAL_PER_TRADE = 50%      # Riesgo por trade
-DAILY_LOSS_KILL = 15%            # Stop loss diario
-TOTAL_DD_KILL = 25%              # Drawdown máximo
-MAX_CONCURRENT = 1               # 1 trade abierto
-COOLDOWN = 60min                 # Espacio mínimo entre trades
-BINANCE_FEE = 0.1%               # Comisión
-```
-
-**Auto-execute nunca activa si:**
-- Winner OOS tiene PnL ≤ 0
-- Profit factor < 1
-- Validación fallida
-
-## 🔄 Workflow Recomendado
-
-```
-SEMANA 1-2: ANÁLISIS
-├─ Escaneo diario sin comprar
-├─ Observar qué modelo gana
-├─ Ajustar thresholds si es necesario
-└─ Documentar patrón ganador
-
-SEMANA 3: TESTNET LIVE
-├─ AUTO_EXECUTE=True en testnet
-├─ Capital de prueba: $10-$100
-├─ Validar mecanismo de compra/venta
-├─ Monitorear trades reales
-└─ Evaluar slippage + comisiones
-
-SEMANA 4: PRODUCCIÓN
-├─ AUTO_EXECUTE=True (REAL MONEY)
-├─ Capital inicial: $100-$500
-├─ Monitoreo activo diario
-├─ Ajustar parámetros según results
-└─ Escalar cuando win rate > 55%
-```
-
-## 📝 Archivos Importantes
-
-- **binance_client.py**: Cliente Binance con testnet/live swap. No editar ligeramente.
-- **.env**: API keys. ⚠️ NUNCA commitear a git.
-- **state/crypto_predictions.db**: Historial de predicciones. Backup regularmente.
-- **model_d_training/**: Pipeline de entrenamiento. Usar cuando quieras reentrenar modelos.
-
-## 🐛 Troubleshooting
-
-### "No pairs found"
-- Verificar conexión internet
-- Verificar API keys en .env
-- Verificar BINANCE_MODE=testnet
-
-### "Gate score too low"
-- Mercado no favorable
-- Ajustar thresholds en crypto_models.py (línea MODELS dict)
-- Esperar mejor momento
-
-### "Connection refused"
-- API rate limit: esperar 1min
-- Binance mantenimiento: esperar
-- Proxy bloqueando: usar VPN
-
-## 📚 Documentación
-
-- Binance API: https://binance-docs.github.io/apidocs/
-- Fear & Greed Index: https://alternative.me/fng/
-- Glassnode (on-chain): https://glassnode.com/ (free tier)
-
-## ✅ Checklist Antes de Producción
-
-- [ ] Binance testnet API keys configuradas
-- [ ] requirements.txt instalado
-- [ ] run_crypto_models.py ejecuta sin errores
-- [ ] Predicciones se guardan en DB
-- [ ] Win rate > 50% en backtests
-- [ ] Safety guards testados
-- [ ] ❌ AUTO_EXECUTE todavía en False
-- [ ] Presupuesto de riesgo definido ($10-$500)
-- [ ] Logs monitoreados diariamente
-- [ ] Plan de escalado documentado
-
----
-
-**Status**: 🟢 Listo para entrenar y operar  
-**Última actualización**: 2026-05-13  
-**Modelos**: A-F + Meta (7 competidores)  
-**Pares monitoreados**: 200  
