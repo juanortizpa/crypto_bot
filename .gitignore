@@ -134,6 +134,15 @@ presentacion/_build/qa/
 presentacion/_build/*.pdf
 presentacion/_build/slide-*.jpg
 
+# -------- Estado runtime (no versionar) --------
+state/reversal_watchlist.json
+state/write_test.txt
+state/risk_guard.json
+
+# Backups de BD con sufijo de fecha (*.bak no los atrapa)
+*.bak_*
+state/*.db.*
+
 # -------- Misc --------
 *.md.bak
 .claude/

@@ -89,16 +89,35 @@ def evaluate_model(model_id, gate, tech):
     def _color(factor_name):
         return factors.get(factor_name, {}).get("color", YELLOW)
 
+    # ── GUARDAS GLOBALES (todos los modelos excepto D) ──────────────────
+    # Tu propio diagnostico (DIAGNOSIS_0TRADES.md) lo dice: la senal viene
+    # del REGIMEN, no de los features. Estas guardas lo aplican:
+    #
+    # 1) Regimen BTC bajista (M1 RED): un sistema long-only pierde en serie
+    #    cuando BTC cae. Solo D (Dip Scalper) tiene tesis valida ahi.
+    # 2) Senal bajista del propio par (score >= 4 de 7): el lado corto
+    #    domina — no abrir longs contra esa corriente (excepto D).
+    if model_id != "D":
+        if _color("M1") == RED:
+            return False, None, None
+        try:
+            from bot.short_signal import bearish_score, VETO_THRESHOLD
+            b_score, _ = bearish_score(gate.symbol)
+            if b_score >= VETO_THRESHOLD:
+                return False, None, None
+        except Exception:
+            pass  # sin datos no se veta (fail-open)
+
     califica = False
 
     if model_id == "A":
-        # Scalp Conservador: gate alto, todo limpio
-        califica = (gate.green_count >= 7 and gate.red_count == 0)
+        # Scalp Conservador: gate alto, setup limpio (tolera 1 RED aislado)
+        califica = (gate.green_count >= 7 and gate.red_count <= 1)
 
     elif model_id == "B":
         # Momentum Burst: momentum positivo confirmado
         momentum_ok = _color("S1") == GREEN or _color("T1") == GREEN
-        califica = (gate.green_count >= 5 and gate.red_count == 0 and momentum_ok)
+        califica = (gate.green_count >= 5 and gate.red_count <= 1 and momentum_ok)
 
     elif model_id == "C":
         # News Spike: noticias positivas
@@ -106,7 +125,7 @@ def evaluate_model(model_id, gate, tech):
         califica = (gate.green_count >= 4 and gate.red_count <= 1 and news_ok)
 
     elif model_id == "D":
-        # Dip Scalper: busca rebotes en miedo
+        # Dip Scalper: busca rebotes en miedo (el unico que tolera 2 RED)
         fng = get_fear_greed()
         fear_ok = fng["value"] < 45
         dip_ok = fear_ok or _color("S1") == RED
@@ -115,12 +134,12 @@ def evaluate_model(model_id, gate, tech):
     elif model_id == "E":
         # Breakout Micro: senal de entrada clara
         entry_ok = _color("T3") == GREEN
-        califica = (gate.green_count >= 5 and gate.red_count == 0 and entry_ok)
+        califica = (gate.green_count >= 5 and gate.red_count <= 1 and entry_ok)
 
     elif model_id == "F":
         # Trend Rider: BTC alcista, montar la ola
         btc_ok = _color("M1") == GREEN
-        califica = (gate.green_count >= 6 and gate.red_count == 0 and btc_ok)
+        califica = (gate.green_count >= 6 and gate.red_count <= 1 and btc_ok)
 
     if califica:
         # Stops/targets dinamicos por ATR del activo (override del default del modelo)

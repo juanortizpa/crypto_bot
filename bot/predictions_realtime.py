@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from bot.crypto_data import get_price, atr, get_bars
+from bot.crypto_data import get_price, atr, get_bars, clear_cache
 from bot.crypto_gate import run_gate
 from bot.predictions import _conn, DB_PATH
 from bot.logger import log
@@ -33,7 +33,10 @@ from binance_client import CRYPTO_PAIRS
 MONITOR_INTERVAL = 300  # 5 minutos en segundos
 EARLY_CLOSE_PROFIT = 3.0  # Cerrar WIN si ganancia >= 3%
 EARLY_CLOSE_LOSS = -2.0  # Cerrar LOSS si pérdida >= 2% (solo en ciertas condiciones)
-VOLATILITY_THRESHOLD = 0.05  # 5% volatilidad para considerar "alta"
+# FIX: vol_pct se calcula como atr/price*100 (o sea, en %). El valor anterior
+# 0.05 significaba ATR < 0.05% — condición casi imposible (regla muerta).
+# 0.25 = ATR 1h < 0.25%, un mercado realmente plano para crypto.
+VOLATILITY_THRESHOLD = 0.25
 
 
 # ============================================================================
@@ -74,12 +77,34 @@ def evaluate_dynamic_close(pred_row):
     if pnl_pct >= EARLY_CLOSE_PROFIT:
         return True, "WIN", f"EARLY_WIN_{pnl_pct:.1f}%"
 
+    # CONDICIÓN 3b: Señal bajista fuerte del par (score >= 4 de 7)
+    # Usa los mismos factores del gate leídos en espejo (lado corto).
+    # - Si vamos ganando: asegurar la ganancia antes de la caída.
+    # - Si vamos perdiendo >= 1%: cortar, no esperar el stop completo.
+    if pnl_pct >= 0.5 or pnl_pct <= -1.0:
+        try:
+            from bot.short_signal import bearish_score, VETO_THRESHOLD
+            b_score, b_reasons = bearish_score(sym)
+            if b_score >= VETO_THRESHOLD:
+                if pnl_pct >= 0.5:
+                    return True, "WIN", f"BEAR_SIGNAL_LOCK_{pnl_pct:+.1f}%"
+                else:
+                    return True, "LOSS", f"BEAR_SIGNAL_CUT_{pnl_pct:+.1f}%"
+        except Exception as e:
+            log("WARN", f"short_signal({sym}): {e}")
+
     # CONDICIÓN 4: Pérdida pero con momentum bajando
     if pnl_pct <= EARLY_CLOSE_LOSS:
-        gate = run_gate(sym)
-        # Si el gate está más rojo que verde, cerrar LOSS
-        if gate['red_count'] > gate['green_count']:
-            return True, "LOSS", f"MOMENTUM_REVERSED_{pnl_pct:.1f}%"
+        try:
+            gate = run_gate(sym)
+            # Si el gate está más rojo que verde, cerrar LOSS
+            # FIX CRÍTICO: run_gate retorna un objeto GateResult, NO un dict.
+            # El código anterior hacía gate['red_count'] → TypeError que MATABA
+            # el monitor exactamente cuando un trade perdía >= 2%.
+            if gate.red_count > gate.green_count:
+                return True, "LOSS", f"MOMENTUM_REVERSED_{pnl_pct:.1f}%"
+        except Exception as e:
+            log("WARN", f"evaluate_dynamic_close({sym}): gate error {e}")
 
     # CONDICIÓN 5: Pérdida pequeña pero volatilidad colapsó (señal de fin de movimiento)
     if -2 < pnl_pct < 0:
@@ -123,6 +148,11 @@ def monitor_positions_realtime(check_interval=MONITOR_INTERVAL):
         while True:
             iteration += 1
             now = datetime.now()
+            # FIX CRÍTICO: sin esto, el cache de crypto_data conservaba los
+            # precios del PRIMER ciclo para siempre. El monitor "en tiempo
+            # real" estaba mirando una foto congelada: stops, targets y
+            # cierres anticipados no se disparaban nunca.
+            clear_cache()
             print(f"[{now.strftime('%H:%M:%S')}] Check #{iteration}...")
 
             con = _conn()
@@ -139,7 +169,12 @@ def monitor_positions_realtime(check_interval=MONITOR_INTERVAL):
             resolved = 0
 
             for pred in pending:
-                should_close, outcome, reason = evaluate_dynamic_close(pred)
+                # Un error en un símbolo no debe matar el monitor completo
+                try:
+                    should_close, outcome, reason = evaluate_dynamic_close(pred)
+                except Exception as e:
+                    log("WARN", f"monitor: error evaluando {pred['symbol']}: {e}")
+                    continue
 
                 if should_close and outcome != "PENDING":
                     # Actualizar BD

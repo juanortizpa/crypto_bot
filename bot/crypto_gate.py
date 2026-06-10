@@ -22,6 +22,7 @@ FACTORES:
   R3 - Sesion 12h: queda tiempo para abrir trade — NUEVO
   N1 - NOTICIAS (PESO DOBLE)
   X1 - Flash crash/pump veto en ultimas horas — NUEVO (veto duro si RED)
+  X2 - Circuit breaker: racha de perdidas — NUEVO (veto duro si RED)
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -68,13 +69,13 @@ class GateResult:
 
         Umbrales adaptados a 16 factores (~equivalente 18/25 que pide el plan):
           - red_count >= 3      → ABORT
-          - green_count >= 11   → EXECUTE_FULL
-          - green_count >= 9    → EXECUTE_HALF
+          - green_count >= 12   → EXECUTE_FULL
+          - green_count >= 10   → EXECUTE_HALF
           - green_count >= 6    → WATCHLIST
           - resto               → ABORT
         """
         # Vetos duros
-        for veto_key in ("X1", "R3", "M4"):
+        for veto_key in ("X1", "X2", "R3", "M4"):
             f = self.factors.get(veto_key)
             if f and f["color"] == RED:
                 self.decision = "ABORT"
@@ -82,15 +83,23 @@ class GateResult:
                 self.veto_reason = f"{veto_key}: {f['reason']}"
                 return self
 
-        g = self.green_count
-        r = self.red_count
+        # N1 (Noticias) tiene peso doble: contar 2x si es GREEN o RED
+        n1 = self.factors.get("N1", {})
+        n1_bonus = 0
+        if n1.get("color") == GREEN:
+            n1_bonus = 1    # ya se conta 1 en green_count, sumar 1 mas
+        elif n1.get("color") == RED:
+            n1_bonus = -1   # ya se conto 1 en red_count, sumar 1 penalizacion al green
+
+        g = self.green_count + (n1_bonus if n1_bonus > 0 else 0)
+        r = self.red_count   + (1 if n1_bonus < 0 else 0)
         if r >= 3:
             self.decision  = "ABORT"
             self.size_mult = 0.0
-        elif g >= 11:
+        elif g >= 12:
             self.decision  = "EXECUTE_FULL"
             self.size_mult = 1.0
-        elif g >= 9:
+        elif g >= 10:
             self.decision  = "EXECUTE_HALF"
             self.size_mult = 0.5
         elif g >= 6:
@@ -124,6 +133,7 @@ class GateResult:
             "R3": "Sesion 12h",
             "N1": "Noticias (2x)",
             "X1": "Flash crash veto",
+            "X2": "Circuit breaker",
         }
         icons = {GREEN: "[G]", YELLOW: "[Y]", RED: "[R]"}
         for key, label in labels.items():
@@ -449,6 +459,22 @@ def run_gate(symbol, entry_price=None, stop_price=None, target_price=None):
             result.add("X1", YELLOW, "Calculo flash crash no disponible")
     else:
         result.add("X1", YELLOW, "Datos 1h insuficientes para flash check")
+
+    # ── X2 — Circuit breaker: racha de perdidas reciente ─────────────
+    # Si el sistema viene perdiendo en serie (regimen hostil), NO abrir
+    # entradas nuevas por unas horas. Veto duro.
+    try:
+        from bot.circuit_breaker import check_circuit_breaker
+        blocked, cb_reason = check_circuit_breaker()
+        if blocked:
+            result.add("X2", RED, f"PAUSA: {cb_reason}")
+        else:
+            # YELLOW a proposito: no debe inflar green_count (los umbrales
+            # de los modelos A-F fueron calibrados con 16 factores).
+            # X2 solo actua como veto duro cuando esta RED.
+            result.add("X2", YELLOW, "Sin racha de perdidas")
+    except Exception as e:
+        result.add("X2", YELLOW, f"breaker no disponible: {type(e).__name__}")
 
     # ── N1 — Sentimiento (PESO DOBLE) ─────────────────────────────────
     try:

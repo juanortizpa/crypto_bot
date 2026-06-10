@@ -293,13 +293,24 @@ def train_classifier(verbose=True) -> dict | None:
 
 # -- Inferencia --
 
+# Ver meta_model.ACCOUNTING_FIX_DATE: outcomes previos al fix estaban inflados.
+ACCOUNTING_FIX_DATE = "2026-06-10"
+
+
 def load_model() -> dict | None:
-    """Carga el modelo entrenado. Retorna None si no existe."""
+    """Carga el modelo entrenado. Retorna None si no existe o si fue
+    entrenado con las etiquetas contaminadas previas al fix de contabilidad."""
     if not os.path.exists(MODEL_PATH):
         return None
     try:
         with open(MODEL_PATH, "rb") as f:
-            return pickle.load(f)
+            data = pickle.load(f)
+        trained_at = (data.get("trained_at") or "")[:10]
+        if trained_at < ACCOUNTING_FIX_DATE:
+            log("WARN", f"exit_model entrenado {trained_at} con labels contaminadas "
+                        f"(pre-fix {ACCOUNTING_FIX_DATE}) — ignorado. Reentrena.")
+            return None
+        return data
     except Exception as e:
         log("WARN", f"exit_model load error: {e}")
         return None

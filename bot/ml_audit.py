@@ -268,15 +268,44 @@ def evaluate_pending(only_n=None):
     evaluated = 0
     for r in rows:
         decided = datetime.fromisoformat(r["decided_at"])
+        # Normalizar a UTC si es naive (compatibilidad con registros antiguos)
+        if decided.tzinfo is None:
+            decided = decided.replace(tzinfo=timezone.utc)
         max_h = r["max_hours"] or 8.0
         # Solo evaluar si ya pasó max_hours (con margen de 5 min)
         if (now - decided).total_seconds() / 3600 < (max_h + 0.1):
             continue
 
-        sim = _simulate_outcome(
-            r["symbol"], r["price"], int(decided.timestamp() * 1000),
-            r["stop_pct"] or 2.5, r["target_pct"] or 4.0, max_h
-        )
+        # Si hay un trade real abierto, usar su resultado real en vez de simular
+        sim = None
+        if r["opened_pred_id"]:
+            try:
+                pred_db = os.path.join(ROOT, "state", "crypto_predictions.db")
+                pcon = sqlite3.connect(pred_db)
+                pcon.row_factory = sqlite3.Row
+                pred = pcon.execute(
+                    "SELECT outcome, pnl_pct FROM predictions WHERE id=?",
+                    (r["opened_pred_id"],)
+                ).fetchone()
+                pcon.close()
+                if pred and pred["outcome"] in ("WIN", "LOSS", "TIMEOUT"):
+                    real_outcome = pred["outcome"]
+                    real_pnl = pred["pnl_pct"] or 0.0
+                    sim = {
+                        "outcome": real_outcome,
+                        "pnl_pct": real_pnl,
+                        "mfe": real_pnl if real_pnl > 0 else 0.0,
+                        "mae": real_pnl if real_pnl < 0 else 0.0,
+                    }
+            except Exception:
+                pass
+
+        # Si no hay trade real o el trade sigue PENDING, simular con precios
+        if sim is None:
+            sim = _simulate_outcome(
+                r["symbol"], r["price"], int(decided.timestamp() * 1000),
+                r["stop_pct"] or 2.5, r["target_pct"] or 4.0, max_h
+            )
         if sim is None:
             log("WARN", f"ml_audit: no se pudo simular {r['symbol']} pred_decided={r['decided_at']}")
             continue

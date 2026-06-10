@@ -1,5 +1,5 @@
 """
-Risk Guard — protecciones a nivel portfolio para el cap de $500.
+Risk Guard — protecciones a nivel portfolio para el cap de $1000.
 
 Detecta y bloquea operativa si:
   * Drawdown total acumulado supera 15% (default).
@@ -15,7 +15,8 @@ from datetime import datetime, date
 from typing import Optional
 
 # Limites configurables por env
-INITIAL_CAPITAL = float(os.environ.get("CRYPTO_INITIAL_CAPITAL", "500"))
+INITIAL_CAPITAL = float(os.environ.get("CRYPTO_INITIAL_CAPITAL",
+                        os.environ.get("CRYPTO_PORTFOLIO", "1000")))
 MAX_DRAWDOWN_PCT = float(os.environ.get("CRYPTO_MAX_DD_PCT", "15.0"))
 MAX_DAILY_LOSS_PCT = float(os.environ.get("CRYPTO_MAX_DAILY_LOSS_PCT", "4.0"))
 MAX_CONSEC_LOSSES = int(os.environ.get("CRYPTO_MAX_CONSEC_LOSSES", "4"))
@@ -140,16 +141,27 @@ def update_balance(current_balance: float) -> dict:
 def register_trade_outcome(pnl_pct: float):
     """
     Registra el resultado de un trade cerrado para tracking de losses consecutivas.
+    Un resultado de 0.0 (breakeven o MANUAL_RESET) no cuenta como loss.
+    Solo dispara TRIPPED si el balance global tambien esta en drawdown real.
     """
     state = _load_state()
-    if pnl_pct < 0:
+
+    if pnl_pct < -0.1:
+        # Perdida real (mayor a 0.1% para ignorar slippage minimo)
         state["consec_losses"] = state.get("consec_losses", 0) + 1
         if state["consec_losses"] >= MAX_CONSEC_LOSSES:
-            state["tripped"] = True
-            state["trip_reason"] = f"CONSEC_LOSSES_{state['consec_losses']}"
-            state["trip_at"] = datetime.now().isoformat()
+            # Solo tripar si el drawdown real lo justifica
+            current_bal = state.get("current_balance", 0)
+            hwm = state.get("high_water_mark", current_bal)
+            real_dd = (hwm - current_bal) / hwm * 100 if hwm > 0 else 0.0
+            if real_dd >= 2.0:  # Solo si hay drawdown real de al menos 2%
+                state["tripped"] = True
+                state["trip_reason"] = f"CONSEC_LOSSES_{state['consec_losses']}"
+                state["trip_at"] = datetime.now().isoformat()
     else:
+        # Win o breakeven: resetear contador
         state["consec_losses"] = 0
+
     _save_state(state)
     return state
 

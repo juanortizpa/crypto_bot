@@ -1,5 +1,5 @@
 {
-  "threshold": 0.8000000000000004,
+  "threshold": 0.60,
   "feature_cols": [
     "atr_pct_1h",
     "atr_pct_1m",

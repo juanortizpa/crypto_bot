@@ -8,7 +8,14 @@
 
 Bot de trading automatizado para criptomonedas en **Binance (Testnet → Mainnet)** que predice movimientos de precio combinando análisis técnico, sentimiento de mercado y noticias en tiempo real.
 
-**Status:** ✅ Production Ready | **Last Update:** 2026-05-21 | **Model B Win Rate:** 97.3%
+**Status:** 🔧 v1.1 — Contabilidad honesta + risk guards | **Last Update:** 2026-06-10
+
+> ⚠️ **Nota de transparencia (v1.1):** el "97.3% win rate" reportado en versiones
+> anteriores era un artefacto de contabilidad (trades expirados con +0.01% contaban
+> como WIN, breakeven contaba como WIN, y los stops tocados intra-ventana no se
+> registraban). La v1.1 corrige la medición (path-check con velas 5m, comisiones
+> descontadas, outcome BE) y agrega stops/targets duros, señal bajista, guarda de
+> régimen y circuit breaker. Ver [AUDITORIA_2026-06-10.md](AUDITORIA_2026-06-10.md).
 
 > 🎓 **Proyecto Final - Curso de Analítica de Datos (Semana 15).** Este repositorio cumple con los entregables del Milestone Final: presentación ejecutiva, modelo de ML con `scikit-learn` evaluado con métricas apropiadas, repositorio documentado e informe final con conclusiones, recomendaciones y limitaciones. Ver carpetas [`/presentacion`](presentacion/), [`/notebooks`](notebooks/) e [`/informe`](informe/).
 
@@ -31,7 +38,7 @@ Bot de trading automatizado para criptomonedas en **Binance (Testnet → Mainnet
 | **Pares** | TOP 20 (ver `bot/top20_pairs.py`) |
 | **Eventos** | 39 globales (Trump, Fed, Elon, regulaciones) |
 | **Ventanas** | 11,563 event windows |
-| **Best Model** | Model B: **97.3% win rate** |
+| **Best Model** | En re-evaluación con contabilidad v1.1 (ver auditoría) |
 
 ## 🏗️ Estructura
 
@@ -176,16 +183,18 @@ python run_crypto_models.py report
 
 ## 🎯 Los 6 Modelos
 
-| Modelo | Nombre | Max Hours | Estrategia | Win Rate* |
-|--------|--------|-----------|-----------|-----------|
-| **A** | Scalp Conservative | 4h | Scalping cauteloso | ~85% |
-| **B** | Momentum Burst | 2h | Impulsos rápidos | **97.3%** ⭐ |
-| **C** | News Spike | 4h | Reacción a noticias | ~80% |
-| **D** | Dip Scalper | 8h | Compra del pánico | ~85% |
-| **E** | Breakout Micro | 6h | Ruptura técnica | ~82% |
-| **F** | Trend Rider | 12h | Montaje de tendencia | ~78% |
+| Modelo | Nombre | Max Hours | Estrategia |
+|--------|--------|-----------|-----------|
+| **A** | Scalp Conservative | 4h | Scalping cauteloso |
+| **B** | Momentum Burst | 2h | Impulsos rápidos |
+| **C** | News Spike | 4h | Reacción a noticias |
+| **D** | Dip Scalper | 8h | Compra del pánico |
+| **E** | Breakout Micro | 6h | Ruptura técnica |
+| **F** | Trend Rider | 12h | Montaje de tendencia |
 
-*En backtest con 4.6M klines 2024
+*Los win rates históricos (~78-97%) se midieron con la contabilidad pre-v1.1,
+hoy sabida optimista, y están en re-evaluación. La métrica de referencia desde
+v1.1 es la **expectancy neta de comisiones** (`python bot_crypto.py report`).
 
 ## 🔐 Gate de 13 Factores
 

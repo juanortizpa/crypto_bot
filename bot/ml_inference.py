@@ -130,6 +130,17 @@ def _load_all_models():
     }
 
 
+def reload_models():
+    """
+    Limpia el cache de modelos para que se recarguen con los thresholds
+    actuales desde los JSON (xgb_best.json, rf_best.json, hybrid_best.json).
+    Útil cuando se editan los thresholds manualmente sin reiniciar el proceso.
+    """
+    global _models_cache
+    _models_cache = {}
+    log("INFO", "ml_inference: cache de modelos limpiado — se recargarán en próxima predicción")
+
+
 # ── Cache de datos auxiliares ────────────────────────────────────────────
 
 def _ensure_aux_loaded():

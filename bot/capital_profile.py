@@ -22,7 +22,7 @@ PROFILES = {
         "name": "STANDARD", "description": "Normal - sin restricciones",
         "min_balance": 200, "max_balance": float("inf"),
         "position_usd": None, "max_trades": 10, "max_portfolio_pct": 0.15,
-        "gate_min": 4, "meta_threshold": 0.55, "min_rr_ratio": 1.5,
+        "gate_min": 4, "meta_threshold": 0.58, "min_rr_ratio": 1.5,
         "target_pct_min": 3.0, "stop_pct_max": 5.0,
         "max_tier": 99, "allowed_tiers": list(range(1, 13)), "max_hours": 6.0,
     },

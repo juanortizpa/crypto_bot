@@ -38,6 +38,10 @@ MAX_HOURS = 12
 # Trailing: si P&L >= este %, mover stop a breakeven
 TRAIL_TRIGGER_PCT = 1.0
 
+# Costo round-trip estimado (fees taker 0.1% x2 + slippage). Un trade expirado
+# con +0.1% NO es un WIN real: neto de comisiones es perdida.
+FEE_RT_PCT = 0.25
+
 
 # -- Schema --
 
@@ -167,6 +171,55 @@ def predict(symbol, verbose=True, model="A", stop_price=None, target_price=None,
     return pred_id
 
 
+# -- Path check: que paso REALMENTE con el precio desde la prediccion --
+
+def _path_outcome(symbol, pred_time, entry, stop, target, now):
+    """
+    Recorre velas de 5m desde la prediccion hasta ahora y verifica si el
+    precio TOCO el stop o el target en algun momento (aunque despues rebotara).
+
+    Esto corrige el sesgo de la version anterior: resolver con el precio del
+    momento en que se corre el script ocultaba stops tocados intra-ventana
+    (inflaba el win rate) y targets tocados que luego se devolvian.
+
+    Si stop y target se tocan en la MISMA vela 5m, se asume LOSS (peor caso,
+    criterio conservador — lo opuesto al backtest optimista).
+
+    Retorna (outcome, exit_price, exit_dt) o (None, None, None) si no toco niveles.
+    """
+    from bot.crypto_data import get_bars
+
+    start_ms = pred_time.timestamp() * 1000
+    end_ms   = now.timestamp() * 1000
+    # Las velas vienen desde AHORA hacia atras: calcular cuantas se necesitan
+    # para cubrir desde la prediccion hasta el presente real.
+    hours_back = (datetime.now() - pred_time).total_seconds() / 3600
+
+    bars = []
+    try:
+        if hours_back * 12 + 4 <= 1000:
+            bars = get_bars(symbol, "5m", min(1000, int(hours_back * 12) + 4))
+        if not bars or (bars and bars[0]["t"] > start_ms):
+            # Prediccion muy vieja para 5m -> velas 1h (cubren ~41 dias)
+            bars = get_bars(symbol, "1h", min(1000, int(hours_back) + 2))
+    except Exception:
+        return None, None, None
+    if not bars:
+        return None, None, None
+
+    for b in bars:
+        if b["t"] < start_ms or b["t"] > end_ms:
+            continue
+        bar_dt = datetime.fromtimestamp(b["t"] / 1000)
+        hit_stop   = b["l"] <= stop
+        hit_target = b["h"] >= target
+        if hit_stop:           # incluye el caso ambos-en-misma-vela -> LOSS
+            return "LOSS", stop, bar_dt
+        if hit_target:
+            return "WIN", target, bar_dt
+    return None, None, None
+
+
 # -- Check and resolve outcomes --
 
 def check_outcomes(force_close=False):
@@ -215,33 +268,59 @@ def check_outcomes(force_close=False):
         if not price:
             continue
 
-        pnl_pct  = round((price - entry) / entry * 100, 3)
-        risk     = entry - stop
-        r_mult   = round((price - entry) / risk, 2) if risk > 0 else 0
         outcome  = "PENDING"
         flags    = []
+        exit_price = price
 
-        # TRAILING STOP: mover stop a breakeven
-        effective_stop = stop
-        if time_ratio >= trail_pct and pnl_pct >= TRAIL_TRIGGER_PCT:
-            effective_stop = entry
-            flags.append("TRAILING_BE")
-            trailed += 1
+        # 1) PATH CHECK (honesto): ¿el precio TOCO stop o target en el camino?
+        #    Limitado a la ventana del trade (no mirar despues de expirar).
+        window_end = min(now, pred_time + timedelta(hours=max_hours))
+        path_out, path_price, path_dt = _path_outcome(
+            sym, pred_time, entry, stop, target, window_end
+        )
+        if path_out:
+            outcome    = path_out
+            exit_price = path_price
+            hours_elapsed = round((path_dt - pred_time).total_seconds() / 3600, 2)
+            flags.append("STOP_HIT" if path_out == "LOSS" else "TARGET_HIT")
+            flags.append("PATH_CHECK")
+        else:
+            # 2) TRAILING STOP: mover stop a breakeven
+            pnl_now = round((price - entry) / entry * 100, 3)
+            effective_stop = stop
+            if time_ratio >= trail_pct and pnl_now >= TRAIL_TRIGGER_PCT:
+                effective_stop = entry
+                flags.append("TRAILING_BE")
+                trailed += 1
 
-        # RESOLUCION
-        if price <= effective_stop:
-            if effective_stop == entry:
+            if price <= effective_stop:
+                if effective_stop == entry:
+                    # Breakeven NO es un WIN: neto de fees es ~0 o negativo.
+                    # Se marca BE y queda excluido del win rate y del
+                    # entrenamiento de meta/exit model (filtran WIN/LOSS).
+                    outcome = "BE"
+                    flags.append("BREAKEVEN")
+                else:
+                    outcome = "LOSS"
+                    flags.append("STOP_HIT")
+            elif price >= target:
                 outcome = "WIN"
-                flags.append("BREAKEVEN")
-            else:
-                outcome = "LOSS"
-                flags.append("STOP_HIT")
-        elif price >= target:
-            outcome = "WIN"
-            flags.append("TARGET_HIT")
-        elif hours_elapsed >= max_hours or force_close:
-            outcome = "WIN" if pnl_pct > 0 else "LOSS"
-            flags.append(f"EXPIRED_{max_hours:.0f}H" if not force_close else "FORCE_CLOSE")
+                flags.append("TARGET_HIT")
+            elif hours_elapsed >= max_hours or force_close:
+                # Expirado: WIN solo si cubre comisiones. Antes, +0.01% contaba
+                # como WIN — asi se fabrico el "97% win rate" que no era real.
+                if pnl_now > FEE_RT_PCT:
+                    outcome = "WIN"
+                elif pnl_now < -FEE_RT_PCT:
+                    outcome = "LOSS"
+                else:
+                    outcome = "BE"
+                flags.append(f"EXPIRED_{max_hours:.0f}H" if not force_close else "FORCE_CLOSE")
+
+        pnl_pct = round((exit_price - entry) / entry * 100, 3)
+        risk    = entry - stop
+        r_mult  = round((exit_price - entry) / risk, 2) if risk > 0 else 0
+        price   = exit_price
 
         if outcome != "PENDING":
             # Calcular P&L en dolares
@@ -257,7 +336,7 @@ def check_outcomes(force_close=False):
                   pnl_pct, pnl_usd, r_mult, round(hours_elapsed, 2),
                   ",".join(flags), row["id"]))
             resolved += 1
-            icon = "WIN" if outcome == "WIN" else "LOSS"
+            icon = outcome  # WIN | LOSS | BE
             usd_str = f" {format_usd(pnl_usd)}" if pnl_usd is not None else ""
             log("INFO", f"Pred #{row['id']} {sym} [{model_id}]: {icon} {pnl_pct:+.3f}%{usd_str} en {hours_elapsed:.1f}h ({','.join(flags)})")
 

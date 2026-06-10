@@ -533,13 +533,26 @@ def train_meta_model(verbose=True) -> dict | None:
 
 # ── Inference ───────────────────────────────────────────────────────
 
+# Fecha del fix de contabilidad (2026-06-10): antes de esto, los outcomes
+# WIN/LOSS estaban inflados (expirado +0.01% = WIN, breakeven = WIN, sin
+# path-check). Un modelo entrenado con esas etiquetas aprendio basura y
+# NO debe usarse como filtro. Reentrenar con trades posteriores al fix.
+ACCOUNTING_FIX_DATE = "2026-06-10"
+
+
 def load_meta_model() -> dict | None:
-    """Carga el meta-modelo entrenado."""
+    """Carga el meta-modelo entrenado (solo si es posterior al fix de labels)."""
     if not os.path.exists(MODEL_PATH):
         return None
     try:
         with open(MODEL_PATH, "rb") as f:
-            return pickle.load(f)
+            data = pickle.load(f)
+        trained_at = (data.get("trained_at") or "")[:10]
+        if trained_at < ACCOUNTING_FIX_DATE:
+            log("WARN", f"meta_model entrenado {trained_at} con labels contaminadas "
+                        f"(pre-fix {ACCOUNTING_FIX_DATE}) — ignorado. Reentrena.")
+            return None
+        return data
     except Exception as e:
         log("WARN", f"meta_model load error: {e}")
         return None

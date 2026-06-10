@@ -1,364 +1,278 @@
 """
-Position Sizing Dinamico — asigna capital DESPUES de generar predicciones.
+Position Sizing Dinámico — $1000 capital, cap 50% total expuesto.
 
-FLUJO:
-  1. generar_predicciones() crea trades sin sizing (qty=NULL)
-  2. asignar_capital() reparte $10,000 entre todas las predicciones nuevas
-  3. Cada trade recibe capital proporcional a su confianza
+LÓGICA:
+  Cada trade recibe un % del capital según qué tan seguro es.
+  El total invertido nunca supera el 50% del capital ($500).
 
-CONFIANZA = f(gate_score, model_win_rate)
-  - gate_score alto  → mas capital (el mercado esta a favor)
-  - model con mejor WR historico → mas capital
-  - Normalizado para que la suma no exceda el portfolio
+TIERS por (gate_green + ml_decision):
+  PREMIUM  — gate >= 12  +  ML=FULL          → 15% = $150
+  ALTO     — gate >= 10  +  ML=FULL          → 12% = $120
+  MEDIO    — gate >= 10  +  ML=HALF          →  8% = $80
+  CAUTELOSO— gate >= 10  +  ML=WATCH/ABORT   →  5% = $50
+  MINIMO   — gate < 10   (no deberia pasar)  →  3% = $30
 
-EJEMPLO con $10,000 y 20 predicciones:
-  - Base uniforme: $500 cada una
-  - Pred con gate=9 y modelo WR=40%: confianza alta → $700
-  - Pred con gate=4 y modelo WR=15%: confianza baja → $300
-  - Total sigue siendo <= $10,000
+Ajustes adicionales:
+  - Drawdown > 5%  → reducir tiers al 70%
+  - Drawdown > 10% → reducir tiers al 50%
+  - WR histórico > 60% del modelo → bonus +20%
+  - WR histórico < 40% del modelo → penalizacion -20%
+
+Cap total:
+  - Suma de posiciones abiertas + nuevas <= 50% del capital
+  - Máximo 5 posiciones simultáneas
 """
 
 import os
 import sqlite3
-from datetime import datetime
 from bot.capital_profile import get_profile
 
-PORTFOLIO_USD = float(os.environ.get("CRYPTO_PORTFOLIO", "10000"))
-# Limites por trade (seguridad) — pueden ser overrideados por el perfil
-MIN_POSITION_USD = float(os.environ.get("CRYPTO_MIN_POS", "5"))     # min Binance = $5
-MAX_POSITION_PCT = float(os.environ.get("CRYPTO_MAX_POS_PCT", "0.10"))  # max 10% del portfolio
-# Hard cap absoluto (para capital pequeno tipo $500)
-HARD_CAP_USD = float(os.environ.get("CRYPTO_HARD_CAP_USD", "50"))   # max $50 por trade
-# Activar hard cap automaticamente si capital <= este umbral
-SMALL_CAPITAL_THRESHOLD = float(os.environ.get("CRYPTO_SMALL_CAP_THRESHOLD", "1000"))
+# ── Constantes ────────────────────────────────────────────────────────────
+MAX_EXPOSURE_PCT  = 0.50   # nunca más del 50% expuesto
+MAX_TRADES        = 5      # máximo 5 posiciones simultáneas
+MIN_POSITION_USD  = 10.0   # mínimo viable para cubrir comisiones
+
+# Tiers de sizing como % del capital
+TIERS = {
+    "PREMIUM":   0.15,   # gate>=12 + ML=FULL
+    "ALTO":      0.12,   # gate>=10 + ML=FULL
+    "MEDIO":     0.08,   # gate>=10 + ML=HALF
+    "CAUTELOSO": 0.05,   # gate>=10 + ML=WATCH/ABORT
+    "MINIMO":    0.03,   # gate<10
+}
 
 
-def _get_model_win_rates(con) -> dict:
-    """
-    Calcula win rate historico por modelo desde la DB.
-    Retorna dict {model_id: win_rate_float} (0.0 a 1.0).
-    Modelos sin historial reciben WR neutral de 0.25.
-    """
-    rows = con.execute("""
-        SELECT model, outcome, COUNT(*) as cnt
+def _get_tier(gate_green: int, ml_decision: str) -> str:
+    """Determina el tier de sizing según gate y decisión ML."""
+    ml = (ml_decision or "UNKNOWN").upper()
+
+    if gate_green >= 12 and ml == "FULL":
+        return "PREMIUM"
+    if gate_green >= 10 and ml == "FULL":
+        return "ALTO"
+    if gate_green >= 10 and ml == "HALF":
+        return "MEDIO"
+    if gate_green >= 10:
+        return "CAUTELOSO"
+    return "MINIMO"
+
+
+def _get_model_win_rate(con, model: str) -> float:
+    """Win rate histórico del modelo (mínimo 10 trades para ser válido)."""
+    row = con.execute("""
+        SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN outcome='WIN' THEN 1 ELSE 0 END) as wins
         FROM predictions
-        WHERE outcome IN ('WIN', 'LOSS')
-        GROUP BY model, outcome
-    """).fetchall()
+        WHERE model=? AND outcome IN ('WIN','LOSS')
+    """, (model,)).fetchone()
 
-    stats = {}
-    for r in rows:
-        m = r["model"] or "A"
-        if m not in stats:
-            stats[m] = {"wins": 0, "total": 0}
-        stats[m]["total"] += r["cnt"]
-        if r["outcome"] == "WIN":
-            stats[m]["wins"] += r["cnt"]
-
-    result = {}
-    for m, s in stats.items():
-        if s["total"] >= 5:  # minimo 5 trades para ser significativo
-            result[m] = s["wins"] / s["total"]
-        else:
-            result[m] = 0.25  # neutral si pocos datos
-    return result
+    if row and row["total"] >= 10:
+        return row["wins"] / row["total"]
+    return 0.45  # neutral si pocos datos
 
 
-def _confidence_score(gate_score: int, model_wr: float) -> float:
-    """
-    Score de confianza 0.3 - 2.0 basado en gate y WR del modelo.
+def _get_current_exposure(con, portfolio: float) -> float:
+    """Capital actualmente expuesto en posiciones abiertas."""
+    row = con.execute("""
+        SELECT COALESCE(SUM(position_usd), 0) as total
+        FROM predictions
+        WHERE outcome='PENDING' AND position_usd > 0
+    """).fetchone()
+    return float(row["total"]) if row else 0.0
 
-    gate_score (0-13):
-      - 3-4: factor 0.6
-      - 5-6: factor 0.8
-      - 7-8: factor 1.0
-      - 9+:  factor 1.3
 
-    model_wr (0.0-1.0):
-      - <15%:  factor 0.5
-      - 15-25%: factor 0.8
-      - 25-35%: factor 1.0
-      - 35-50%: factor 1.3
-      - >50%:  factor 1.5
-
-    Score final = gate_factor * wr_factor
-    """
-    # Factor por gate score
-    if gate_score >= 9:
-        gate_f = 1.3
-    elif gate_score >= 7:
-        gate_f = 1.0
-    elif gate_score >= 5:
-        gate_f = 0.8
-    else:
-        gate_f = 0.6
-
-    # Factor por win rate historico
-    if model_wr > 0.50:
-        wr_f = 1.5
-    elif model_wr > 0.35:
-        wr_f = 1.3
-    elif model_wr > 0.25:
-        wr_f = 1.0
-    elif model_wr > 0.15:
-        wr_f = 0.8
-    else:
-        wr_f = 0.5
-
-    return round(gate_f * wr_f, 2)
+def _get_ml_decision_for_pred(pred_id: int) -> str:
+    """Lee la decisión ML desde ml_decisions.db para el pred dado."""
+    try:
+        ml_db = os.path.join(os.path.dirname(os.path.dirname(__file__)), "state", "ml_decisions.db")
+        con = sqlite3.connect(ml_db)
+        row = con.execute(
+            "SELECT ml_decision FROM ml_decisions WHERE opened_pred_id=?",
+            (pred_id,)
+        ).fetchone()
+        con.close()
+        return row[0] if row and row[0] else "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
 
 
 def asignar_capital(con, pred_ids: list, portfolio: float = None) -> list:
     """
-    Asigna capital a un lote de predicciones basado en confianza.
-    Respeta el perfil de capital activo (SURVIVAL/GROWTH/STANDARD).
-
-    Pasos:
-      1. Calcula WR por modelo (historico)
-      2. Para cada pred: confidence = f(gate_score, model_wr)
-      3. Base por trade = portfolio / num_preds (o fijo si perfil lo indica)
-      4. Ajusta base * confidence
-      5. Normaliza para que total <= portfolio
-      6. Aplica limites min/max por trade
-      7. Actualiza DB con quantity, position_usd, risk_usd
-
-    Retorna lista de dicts con sizing asignado.
+    Asigna capital a predicciones nuevas respetando:
+      - Tier de confianza (gate + ML)
+      - Cap total 50% del capital
+      - Máximo 5 posiciones simultáneas
+      - Ajuste por drawdown y WR histórico
     """
+    if not pred_ids:
+        return []
+
+    # Garantizar acceso por nombre de columna
+    con.row_factory = sqlite3.Row
+
+    # Capital base
     profile = get_profile()
-    portfolio = portfolio or profile.get("balance", 0) or PORTFOLIO_USD
-    max_pct = profile.get("max_portfolio_pct", MAX_POSITION_PCT)
-    max_per_trade = portfolio * max_pct
-    fixed_position = profile.get("position_usd")  # None = dinamico
-    max_trades = profile.get("max_trades", 10)
+    portfolio = portfolio or profile.get("balance", 0) or float(os.environ.get("CRYPTO_PORTFOLIO", "1000"))
 
-    # Hard cap absoluto para cuentas pequenas ($500)
-    use_hard_cap = portfolio <= SMALL_CAPITAL_THRESHOLD
-    if use_hard_cap:
-        # Aplicar el menor entre % cap y hard cap absoluto
-        max_per_trade = min(max_per_trade, HARD_CAP_USD)
-
-    # Risk guard a nivel portfolio
+    # ── Veto por risk_guard ───────────────────────────────────────────────
     try:
         from bot.risk_guard import is_tripped, trip_reason
         if is_tripped():
-            # Bot pausado por DD/daily/consec losses → 0 capital asignado
             for pid in pred_ids:
-                con.execute(
-                    "UPDATE predictions SET quantity=0, position_usd=0, risk_usd=0 WHERE id=?",
-                    (pid,),
-                )
+                con.execute("UPDATE predictions SET quantity=0, position_usd=0, risk_usd=0 WHERE id=?", (pid,))
             con.commit()
-            return [{"id": pid, "position_usd": 0, "quantity": 0,
-                     "risk_usd": 0, "skipped": True,
-                     "skip_reason": f"RISK_GUARD_TRIPPED: {trip_reason()}"}
-                    for pid in pred_ids]
+            return [{"id": pid, "position_usd": 0, "quantity": 0, "risk_usd": 0,
+                     "skipped": True, "skip_reason": f"RISK_GUARD: {trip_reason()}"} for pid in pred_ids]
     except Exception:
         pass
 
-    # Veto por sesion 12h: si no podemos abrir nuevas entradas, asignar 0
+    # ── Veto por sesión ───────────────────────────────────────────────────
     try:
         from bot.session_manager import SessionManager
         sm = SessionManager.current()
         if sm is not None and not sm.can_open_new_trades():
             for pid in pred_ids:
-                con.execute(
-                    "UPDATE predictions SET quantity=0, position_usd=0, risk_usd=0 WHERE id=?",
-                    (pid,),
-                )
+                con.execute("UPDATE predictions SET quantity=0, position_usd=0, risk_usd=0 WHERE id=?", (pid,))
             con.commit()
-            return [{"id": pid, "position_usd": 0, "quantity": 0,
-                     "risk_usd": 0, "skipped": True,
-                     "skip_reason": f"SESSION_STATE_{sm.state()}"}
-                    for pid in pred_ids]
+            return [{"id": pid, "position_usd": 0, "quantity": 0, "risk_usd": 0,
+                     "skipped": True, "skip_reason": f"SESSION_{sm.state()}"} for pid in pred_ids]
     except Exception:
         pass
 
-    if not pred_ids:
-        return []
-
-    # Obtener predicciones
-    placeholders = ",".join("?" * len(pred_ids))
-    preds = con.execute(
-        f"SELECT * FROM predictions WHERE id IN ({placeholders})",
-        pred_ids,
-    ).fetchall()
-
-    if not preds:
-        return []
-
-    # Win rates historicos
-    model_wrs = _get_model_win_rates(con)
-
-    # Calcular confianza por prediccion
-    scores = []
-    for p in preds:
-        gate = p["gate_score"] or 4
-        model = p["model"] or "A"
-        wr = model_wrs.get(model, 0.25)
-        conf = _confidence_score(gate, wr)
-        scores.append({
-            "id":         p["id"],
-            "price":      p["price_at_pred"],
-            "stop":       p["stop_price"],
-            "model":      model,
-            "gate":       gate,
-            "wr":         wr,
-            "confidence": conf,
-        })
-
-    # Limitar a max_trades del perfil (los de mayor confianza primero)
-    if len(scores) > max_trades:
-        scores.sort(key=lambda s: s["confidence"], reverse=True)
-        scores = scores[:max_trades]
-
-    # Distribuir capital proporcionalmente a confianza
-    total_conf = sum(s["confidence"] for s in scores)
-    if total_conf <= 0:
-        total_conf = len(scores)  # fallback uniforme
-
-    results = []
-    total_assigned = 0
-
-    # Ajuste por drawdown actual (mas DD -> sizing reducido)
+    # ── Multiplicador por drawdown ────────────────────────────────────────
     dd_mult = 1.0
     try:
         from bot.risk_guard import _load_state as _risk_state
-        rs = _risk_state()
-        dd = rs.get("current_dd_pct", 0.0) or 0.0
+        dd = (_risk_state().get("current_dd_pct") or 0.0)
         if dd >= 10.0:
-            dd_mult = 0.5
+            dd_mult = 0.50
         elif dd >= 5.0:
-            dd_mult = 0.7
-        # <5% DD -> 1.0
+            dd_mult = 0.70
     except Exception:
         pass
 
-    for s in scores:
-        # Posicion fija (SURVIVAL/GROWTH) o proporcional (STANDARD)
-        if fixed_position:
-            pos_usd = fixed_position
-        else:
-            share = s["confidence"] / total_conf
-            pos_usd = portfolio * share
+    # ── Exposición actual ─────────────────────────────────────────────────
+    current_exposure = _get_current_exposure(con, portfolio)
+    max_exposure_usd = portfolio * MAX_EXPOSURE_PCT   # $500 con $1000
+    available_usd    = max(0.0, max_exposure_usd - current_exposure)
 
-        # Aplicar reduccion por drawdown
-        pos_usd = pos_usd * dd_mult
+    # ── Contar posiciones abiertas ────────────────────────────────────────
+    open_count = con.execute(
+        "SELECT COUNT(*) FROM predictions WHERE outcome='PENDING' AND position_usd > 0"
+    ).fetchone()[0]
 
-        # Limites
-        pos_usd = max(pos_usd, MIN_POSITION_USD)
-        pos_usd = min(pos_usd, max_per_trade)
+    # ── Obtener predicciones ──────────────────────────────────────────────
+    placeholders = ",".join("?" * len(pred_ids))
+    preds = con.execute(
+        f"SELECT * FROM predictions WHERE id IN ({placeholders})", pred_ids
+    ).fetchall()
 
-        # Si la posicion queda demasiado chica (Binance min + comisiones inviables)
-        # → marcar como skipped en lugar de comprar algo poco rentable
-        # Con $500: mantener un piso de $10 para que el round-trip de 0.20% no domine
-        if portfolio <= SMALL_CAPITAL_THRESHOLD and pos_usd < 10.0:
-            pos_usd = 0  # skip
+    results = []
 
-        price = s["price"]
-        stop = s["stop"]
+    for p in preds:
+        pid    = p["id"]
+        price  = p["price_at_pred"]
+        stop   = p["stop_price"]
+        model  = p["model"] or "D"
+        gate   = p["gate_score"] or 0
 
-        if not price or price <= 0:
-            results.append({"id": s["id"], "position_usd": 0, "quantity": 0, "risk_usd": 0})
+        # Verificar cupo de posiciones simultáneas
+        if open_count >= MAX_TRADES:
+            con.execute("UPDATE predictions SET quantity=0, position_usd=0, risk_usd=0 WHERE id=?", (pid,))
+            results.append({"id": pid, "position_usd": 0, "quantity": 0, "risk_usd": 0,
+                             "skipped": True, "skip_reason": f"MAX_TRADES_{MAX_TRADES}"})
             continue
 
-        quantity = pos_usd / price
+        # Leer ML decision
+        ml_dec = _get_ml_decision_for_pred(pid)
 
-        stop_distance = abs(price - stop) if stop else price * 0.02
-        if stop_distance <= 0:
-            stop_distance = price * 0.02
+        # Determinar tier
+        tier     = _get_tier(gate, ml_dec)
+        base_pct = TIERS[tier]
 
-        risk_usd = quantity * stop_distance
-        risk_pct = risk_usd / portfolio * 100
+        # Ajuste por WR histórico del modelo
+        wr = _get_model_win_rate(con, model)
+        if wr > 0.60:
+            wr_mult = 1.20
+        elif wr < 0.40:
+            wr_mult = 0.80
+        else:
+            wr_mult = 1.00
 
-        # Actualizar DB
+        # Posición en USD
+        pos_usd = portfolio * base_pct * wr_mult * dd_mult
+
+        # No exceder capital disponible (cap 50%)
+        pos_usd = min(pos_usd, available_usd)
+
+        # Límite mínimo
+        if pos_usd < MIN_POSITION_USD:
+            con.execute("UPDATE predictions SET quantity=0, position_usd=0, risk_usd=0 WHERE id=?", (pid,))
+            results.append({"id": pid, "position_usd": 0, "quantity": 0, "risk_usd": 0,
+                             "skipped": True, "skip_reason": "BELOW_MIN_POSITION"})
+            continue
+
+        if not price or price <= 0:
+            results.append({"id": pid, "position_usd": 0, "quantity": 0, "risk_usd": 0})
+            continue
+
+        quantity     = pos_usd / price
+        stop_dist    = abs(price - stop) if stop else price * 0.02
+        stop_dist    = max(stop_dist, price * 0.001)
+        risk_usd     = quantity * stop_dist
+        risk_pct     = risk_usd / portfolio * 100
+
         con.execute("""
-            UPDATE predictions
-            SET quantity = ?, position_usd = ?, risk_usd = ?
-            WHERE id = ?
-        """, (round(quantity, 8), round(pos_usd, 2), round(risk_usd, 2), s["id"]))
+            UPDATE predictions SET quantity=?, position_usd=?, risk_usd=? WHERE id=?
+        """, (round(quantity, 8), round(pos_usd, 2), round(risk_usd, 2), pid))
 
-        total_assigned += pos_usd
+        available_usd -= pos_usd
+        open_count    += 1
+
         results.append({
-            "id":               s["id"],
-            "model":            s["model"],
-            "gate":             s["gate"],
-            "wr":               round(s["wr"] * 100, 1),
-            "confidence":       s["confidence"],
-            "position_usd":     round(pos_usd, 2),
-            "quantity":         round(quantity, 8),
-            "risk_usd":         round(risk_usd, 2),
+            "id":                pid,
+            "model":             model,
+            "gate":              gate,
+            "ml_decision":       ml_dec,
+            "tier":              tier,
+            "wr":                round(wr * 100, 1),
+            "position_usd":      round(pos_usd, 2),
+            "quantity":          round(quantity, 8),
+            "risk_usd":          round(risk_usd, 2),
             "risk_pct_portfolio": round(risk_pct, 2),
         })
 
     con.commit()
-
     return results
 
 
 def calculate_position(entry_price: float, stop_price: float,
                        portfolio: float = None, **kwargs) -> dict:
-    """
-    Calculo de posicion individual (usado como fallback).
-    Para el flujo normal, usar asignar_capital() despues de generar todas las preds.
-    """
-    portfolio = portfolio or PORTFOLIO_USD
-    # Fallback: 5% del portfolio por trade si se llama individualmente
-    pos_usd = portfolio * 0.05
-
+    """Fallback individual (5% fijo)."""
+    portfolio = portfolio or float(os.environ.get("CRYPTO_PORTFOLIO", "1000"))
+    pos_usd  = portfolio * 0.05
     if not entry_price or entry_price <= 0:
         return {"quantity": 0, "position_usd": 0, "risk_usd": 0, "risk_pct_portfolio": 0}
-
-    quantity = pos_usd / entry_price
-
-    stop_distance = abs(entry_price - stop_price)
-    if stop_distance <= 0:
-        stop_distance = entry_price * 0.02
-
-    risk_usd = quantity * stop_distance
-    risk_pct = risk_usd / portfolio * 100
-
+    quantity     = pos_usd / entry_price
+    stop_dist    = abs(entry_price - stop_price) if stop_price else entry_price * 0.02
+    risk_usd     = quantity * stop_dist
     return {
-        "quantity":          round(quantity, 8),
-        "position_usd":     round(pos_usd, 2),
-        "risk_usd":         round(risk_usd, 2),
-        "risk_pct_portfolio": round(risk_pct, 2),
+        "quantity":           round(quantity, 8),
+        "position_usd":       round(pos_usd, 2),
+        "risk_usd":           round(risk_usd, 2),
+        "risk_pct_portfolio": round(risk_usd / portfolio * 100, 2),
     }
 
 
 def format_quantity(quantity: float, price: float) -> str:
-    """Formatea cantidad legible segun el precio del asset."""
-    if price >= 1000:
-        return f"{quantity:.6f}"
-    elif price >= 1:
-        return f"{quantity:.2f}"
-    elif price >= 0.01:
-        return f"{quantity:.0f}"
-    else:
-        return f"{quantity:,.0f}"
+    if price >= 1000:  return f"{quantity:.6f}"
+    elif price >= 1:   return f"{quantity:.2f}"
+    elif price >= 0.01: return f"{quantity:.0f}"
+    else:              return f"{quantity:,.0f}"
 
 
 def format_usd(amount: float) -> str:
-    """Formatea dolares de forma legible."""
-    if abs(amount) >= 1000:
-        return f"${amount:,.0f}"
-    elif abs(amount) >= 1:
-        return f"${amount:,.2f}"
-    else:
-        return f"${amount:.4f}"
-
-
-def portfolio_summary(open_positions: list) -> dict:
-    """Resumen del portfolio con posiciones abiertas."""
-    portfolio = PORTFOLIO_USD
-    total_invested = sum(p.get("position_usd", 0) for p in open_positions)
-    total_risk     = sum(p.get("risk_usd", 0) for p in open_positions)
-
-    return {
-        "portfolio_usd":   portfolio,
-        "total_invested":  round(total_invested, 2),
-        "total_risk":      round(total_risk, 2),
-        "available":       round(portfolio - total_invested, 2),
-        "utilization_pct": round(total_invested / portfolio * 100, 1),
-        "risk_pct":        round(total_risk / portfolio * 100, 1),
-        "open_trades":     len(open_positions),
-    }
+    if abs(amount) >= 1000: return f"${amount:,.0f}"
+    elif abs(amount) >= 1:  return f"${amount:,.2f}"
+    else:                   return f"${amount:.4f}"

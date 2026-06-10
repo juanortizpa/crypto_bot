@@ -57,18 +57,32 @@ def _close_position(con, pred_id: int, reason: str, current_price: float):
     Si DRY_RUN, solo actualiza la DB; si no, deberia integrarse con binance_client
     para ejecutar la venta real (queda como TODO si quieres trading real).
     """
+    con.row_factory = sqlite3.Row
     pred = con.execute("SELECT * FROM predictions WHERE id=?", (pred_id,)).fetchone()
     if not pred:
         return None
-    entry = pred[2]  # price_at_pred (asume tupla por position; usar dict factory si row_factory=Row)
+    entry = pred["price_at_pred"]
     pnl_pct = (current_price - entry) / entry * 100 if entry else 0.0
-    outcome = "WIN" if pnl_pct > 0 else "LOSS"
+    # WIN solo si cubre comisiones; zona +-FEE_RT_PCT es breakeven (BE)
+    from bot.predictions import FEE_RT_PCT
+    if pnl_pct > FEE_RT_PCT:
+        outcome = "WIN"
+    elif pnl_pct < -FEE_RT_PCT:
+        outcome = "LOSS"
+    else:
+        outcome = "BE"
+    now = datetime.now()
+    try:
+        pred_time = datetime.fromisoformat(pred["predicted_at"])
+        hours_held = round((now - pred_time).total_seconds() / 3600, 4)
+    except Exception:
+        hours_held = None
     con.execute("""
         UPDATE predictions
-        SET outcome=?, price_at_outcome=?, pnl_pct=?, outcome_date=?, error_flags=?
+        SET outcome=?, price_at_outcome=?, pnl_pct=?, outcome_date=?, error_flags=?, hours_held=?
         WHERE id=?
     """, (outcome, current_price, round(pnl_pct, 4),
-          datetime.now().isoformat(), f"CLOSED_BY_RUNNER:{reason}", pred_id))
+          now.isoformat(), f"CLOSED_BY_RUNNER:{reason}", hours_held, pred_id))
     con.commit()
     log("INFO", f"  [CLOSE] pred={pred_id} reason={reason} pnl={pnl_pct:+.3f}%")
     # actualizar trailing post-cierre, risk_guard outcome
@@ -87,8 +101,14 @@ def _close_position(con, pred_id: int, reason: str, current_price: float):
 
 def _monitor_open_positions(force_close_all: bool = False):
     """Itera todas las posiciones abiertas, graba snapshot, evalua salida."""
-    from bot.crypto_data import get_price
+    from bot.crypto_data import get_price, clear_cache
     from bot.trade_monitor import record_snapshot, DB_PATH
+
+    # FIX CRÍTICO: el cache de crypto_data solo lo limpiaba scan() (cada 5 min
+    # y SOLO si la sesion permite abrir trades). En FREEZE o con risk guard
+    # tripped, el monitor corria con precios congelados del ultimo scan —
+    # exactamente cuando mas importa cerrar bien. Limpiar SIEMPRE aqui.
+    clear_cache()
 
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
@@ -126,13 +146,26 @@ def _close_position_row(con, row, reason: str, current_price: float):
     pid = row["id"]
     entry = row["price_at_pred"]
     pnl_pct = (current_price - entry) / entry * 100 if entry else 0.0
-    outcome = "WIN" if pnl_pct > 0 else "LOSS"
+    # WIN solo si cubre comisiones; zona +-FEE_RT_PCT es breakeven (BE)
+    from bot.predictions import FEE_RT_PCT
+    if pnl_pct > FEE_RT_PCT:
+        outcome = "WIN"
+    elif pnl_pct < -FEE_RT_PCT:
+        outcome = "LOSS"
+    else:
+        outcome = "BE"
+    now = datetime.now()
+    try:
+        pred_time = datetime.fromisoformat(row["predicted_at"])
+        hours_held = round((now - pred_time).total_seconds() / 3600, 4)
+    except Exception:
+        hours_held = None
     con.execute("""
         UPDATE predictions
-        SET outcome=?, price_at_outcome=?, pnl_pct=?, outcome_date=?, error_flags=?
+        SET outcome=?, price_at_outcome=?, pnl_pct=?, outcome_date=?, error_flags=?, hours_held=?
         WHERE id=?
     """, (outcome, current_price, round(pnl_pct, 4),
-          datetime.now().isoformat(), f"CLOSED_BY_RUNNER:{reason}", pid))
+          now.isoformat(), f"CLOSED_BY_RUNNER:{reason}", hours_held, pid))
     con.commit()
     log("INFO", f"  [CLOSE] pred={pid} sym={row['symbol']} reason={reason} pnl={pnl_pct:+.3f}%")
     try:
@@ -147,7 +180,7 @@ def _close_position_row(con, row, reason: str, current_price: float):
         pass
 
 
-def _run_scan_cycle():
+def _run_scan_cycle(session_start_iso: str = None):
     """Un ciclo de scan + generacion de predicciones + sizing."""
     log("INFO", "  Ciclo de scan inicial...")
     try:
@@ -189,6 +222,12 @@ def _run_scan_cycle():
         open_syms = set(row[0] for row in open_con.execute(
             "SELECT DISTINCT symbol FROM predictions WHERE outcome='PENDING'"
         ).fetchall())
+        # Cargar simbolos ya operados en esta sesion (evita reentradas)
+        _ssi = session_start_iso  # recibido como parametro
+        session_syms = set(row[0] for row in open_con.execute(
+            "SELECT DISTINCT symbol FROM predictions WHERE outcome IN ('WIN','LOSS') AND predicted_at >= ?",
+            (_ssi,)
+        ).fetchall()) if _ssi else set()
         open_con.close()
 
         # Importar ml_inference (puede fallar si numpy no esta instalado)
@@ -215,6 +254,11 @@ def _run_scan_cycle():
                 log("INFO", f"  {sym}: ya hay posicion abierta — skip duplicado")
                 continue
 
+            # GUARD 1b: no reentrar al mismo par si ya se opero en esta sesion
+            if sym in session_syms:
+                log("INFO", f"  {sym}: ya operado en esta sesion — skip reentrada")
+                continue
+
             # GUARD 2: detectar precio congelado (data muerta / ticker delistado)
             # Si las ultimas 3 velas 1h tienen exactamente el mismo close,
             # el ticker no esta operando -> skip.
@@ -230,98 +274,128 @@ def _run_scan_cycle():
             except Exception:
                 pass
 
-            # GUARD 3: validacion ML (XGB + RF + HYBRID ensemble)
-            # Si los 3 modelos coinciden -> EXECUTE_FULL
-            # Si mayoria (2/3) coincide  -> EXECUTE_HALF (degrada FULL si era FULL)
-            # Si solo 1/3 coincide       -> degrada a HALF; si gate ya era HALF -> skip
-            # Si ninguno coincide        -> skip (ABORT)
+            # GUARD 3: prediccion ML (XGB + RF + HYBRID ensemble).
+            # IMPORTANTE: el ensemble fue entrenado SOLO para dips (Modelo D),
+            # asi que aqui unicamente se CALCULA su opinion. La accion de bloquear
+            # o degradar tamano se aplica mas abajo, despues de elegir modelo, y
+            # SOLO cuando el modelo elegido es D (ver "Gate ML consciente del modelo").
+            # Para B/E/F/A/C el ML es informativo: no debe vetar momentum/breakout.
             ml_decision = None
             ml_result = None
             if ML_AVAILABLE and ml_predict is not None:
                 try:
                     ml_result = ml_predict(sym)
                     ml_decision = ml_result.get("decision")
-                    ml_votes = ml_result.get("votes", "?")
-                    log("INFO", f"  {sym}: ML={ml_decision} ({ml_votes})")
+                    log("INFO", f"  {sym}: ML={ml_decision} ({ml_result.get('votes','?')})")
 
-                    # UNKNOWN: fallo en computar features (red, datos faltantes).
-                    # Reintento 1 vez antes de rendirme.
+                    # UNKNOWN: fallo en computar features. Reintento 1 vez.
                     if ml_decision == "UNKNOWN":
                         log("INFO", f"  {sym}: ML UNKNOWN, retry...")
                         time.sleep(2)
                         ml_result = ml_predict(sym)
                         ml_decision = ml_result.get("decision")
                         log("INFO", f"  {sym}: ML retry={ml_decision} ({ml_result.get('votes','?')})")
-
-                    # Si sigue UNKNOWN, NO operar. Mejor perder un trade que
-                    # operar sin la validacion ML que entrenamos.
-                    # Override con env CRYPTO_ALLOW_ML_UNKNOWN=true si lo necesitas.
-                    if ml_decision == "UNKNOWN":
-                        if os.environ.get("CRYPTO_ALLOW_ML_UNKNOWN", "").lower() in ("1", "true", "yes"):
-                            log("WARN", f"  {sym}: ML sigue UNKNOWN pero CRYPTO_ALLOW_ML_UNKNOWN=true, sigo")
-                        else:
-                            log("INFO", f"  {sym}: ML UNKNOWN, skip (capital protegido)")
-                            continue
-
-                    if ml_decision == "ABORT":
-                        log("INFO", f"  {sym}: ML veto, skip")
-                        # Registrar auditoria
-                        try:
-                            from bot.ml_audit import record_decision
-                            from bot.crypto_data import get_price
-                            price_now = get_price(sym) or 0
-                            record_decision(sym, r["decision"], r["green"],
-                                            ml_result, price_now)
-                        except Exception:
-                            pass
-                        continue
-
-                    if ml_decision == "WATCH" and r["decision"] == "EXECUTE_HALF":
-                        log("INFO", f"  {sym}: ML solo 1/3 + gate HALF -> skip")
-                        try:
-                            from bot.ml_audit import record_decision
-                            from bot.crypto_data import get_price
-                            price_now = get_price(sym) or 0
-                            record_decision(sym, r["decision"], r["green"],
-                                            ml_result, price_now)
-                        except Exception:
-                            pass
-                        continue
-                    if ml_decision == "WATCH" and r["decision"] == "EXECUTE_FULL":
-                        r["decision"] = "EXECUTE_HALF"
-                        log("INFO", f"  {sym}: degradado a HALF por ML")
-                    if ml_decision == "HALF" and r["decision"] == "EXECUTE_FULL":
-                        r["decision"] = "EXECUTE_HALF"
-                        log("INFO", f"  {sym}: degradado a HALF (mayoria ML)")
                 except Exception as e:
                     log("WARN", f"  {sym}: error en ML predict: {e}")
-                    # mismo criterio: si no pudimos evaluar ML, skip
-                    if os.environ.get("CRYPTO_ALLOW_ML_UNKNOWN", "").lower() not in ("1", "true", "yes"):
-                        log("INFO", f"  {sym}: error ML -> skip")
-                        continue
+                    ml_decision = None
+                    ml_result = None
 
             try:
                 tech = technical_score(sym)
-                # Probar todos los modelos, elegir el primero que califica
-                chosen_model = None
-                chosen_stop = None
-                chosen_target = None
-                for mid in ("D", "A", "B", "F", "E", "C"):  # D primero (dip)
+                price_now = tech.get("price")
+                # ── Selección por MEJOR modelo (no por orden fijo) ───────────────
+                # 1) Reunir TODOS los modelos que califican para este símbolo.
+                # 2) Puntuar cada uno por expectativa esperada:
+                #       EV = P(WIN)*target_pct - (1-P(WIN))*stop_pct
+                #    donde P(WIN) viene del meta-modelo (predict_entry) que sabe
+                #    distinguir por model_id, y target/stop son los del propio modelo.
+                # 3) Ejecutar con el de mayor EV. Así el sistema elige el modelo
+                #    con el que el trade funcionaría mejor, en vez de quedarse
+                #    siempre con D por ser el primero del loop.
+                from bot.meta_model import predict_entry
+                candidates = []  # (model_id, stop, target, p_win, ev)
+                for mid in ("A", "B", "C", "D", "E", "F"):
                     califica, stop, target = evaluate_model(mid, gate, tech)
-                    if califica:
-                        chosen_model = mid
-                        chosen_stop = stop
-                        chosen_target = target
-                        break
-                if not chosen_model:
+                    if not califica:
+                        continue
+                    # P(WIN) del meta-modelo para ESTE modelo. Fallback neutro 0.5.
+                    p_win = 0.5
+                    try:
+                        _dec, _p = predict_entry(gate, mid, symbol=sym)
+                        if _dec != "NO_MODEL" and _p:
+                            p_win = _p
+                    except Exception:
+                        pass
+                    # Expectativa ponderada por el R:R real del modelo.
+                    if price_now:
+                        target_pct = max(target / price_now - 1.0, 0.0)
+                        stop_pct = max(1.0 - stop / price_now, 0.0)
+                    else:
+                        target_pct = MODELS[mid].get("target_pct", 0.03)
+                        stop_pct = MODELS[mid].get("stop_pct", 0.02)
+                    ev = p_win * target_pct - (1.0 - p_win) * stop_pct
+                    candidates.append((mid, stop, target, p_win, ev))
+
+                if not candidates:
                     log("INFO", f"  {sym}: ningun modelo califico")
                     continue
+
+                # Elegir el de mayor EV; desempate por mayor P(WIN).
+                candidates.sort(key=lambda c: (c[4], c[3]), reverse=True)
+                chosen_model, chosen_stop, chosen_target, chosen_pwin, chosen_ev = candidates[0]
+                if len(candidates) > 1:
+                    ranking = ", ".join(
+                        f"{m}(p={pw:.2f},ev={e:+.4f})" for m, _s, _t, pw, e in candidates)
+                    log("INFO", f"  {sym}: modelos que califican -> {ranking}")
+                log("INFO",
+                    f"  {sym}: elegido modelo {chosen_model} "
+                    f"(P(WIN)={chosen_pwin:.2f}, EV={chosen_ev:+.4f})")
+
+                # ── Gate ML CONSCIENTE DEL MODELO ────────────────────────────────
+                # El ensemble ML fue entrenado para DIPS (Modelo D): da probabilidades
+                # bajas en momentum/breakout y vetaria ganadores de B/E/F. Por eso su
+                # veto SOLO aplica cuando el modelo elegido es D. Para el resto el ML
+                # es informativo: se loguea y audita, pero NO bloquea ni degrada.
+                _allow_unknown = os.environ.get(
+                    "CRYPTO_ALLOW_ML_UNKNOWN", "").lower() in ("1", "true", "yes")
+                if chosen_model == "D":
+                    if ml_decision == "UNKNOWN" and not _allow_unknown:
+                        log("INFO", f"  {sym}: [D] ML UNKNOWN -> skip (capital protegido)")
+                        continue
+                    if ml_decision == "ABORT":
+                        if r["decision"] == "EXECUTE_FULL":
+                            r["decision"] = "EXECUTE_HALF"
+                            log("INFO", f"  {sym}: [D] ML ABORT + gate FULL -> HALF (advisory)")
+                        else:
+                            log("INFO", f"  {sym}: [D] ML ABORT + gate HALF -> skip")
+                            try:
+                                from bot.ml_audit import record_decision
+                                from bot.crypto_data import get_price
+                                record_decision(sym, r["decision"], r["green"],
+                                                ml_result, get_price(sym) or 0)
+                            except Exception:
+                                pass
+                            continue
+                    elif ml_decision == "WATCH" and r["decision"] == "EXECUTE_FULL":
+                        r["decision"] = "EXECUTE_HALF"
+                        log("INFO", f"  {sym}: [D] ML WATCH -> HALF")
+                    elif ml_decision == "HALF" and r["decision"] == "EXECUTE_FULL":
+                        r["decision"] = "EXECUTE_HALF"
+                        log("INFO", f"  {sym}: [D] ML HALF (mayoria) -> HALF")
+                elif ml_decision and ml_decision != "UNKNOWN":
+                    log("INFO",
+                        f"  {sym}: [{chosen_model}] ML={ml_decision} informativo "
+                        f"(no veta momentum/breakout)")
 
                 # Comprobar que el trade cabe en lo que queda de sesion
                 model_max_h = MODELS[chosen_model].get("max_hours", 4)
                 if sm is not None and not sm.can_fit_trade(model_max_h):
                     log("INFO",
                         f"  {sym}: trade ({model_max_h}h) excede tiempo restante de sesion")
+                    continue
+                # Minimo 30 minutos restantes para abrir cualquier trade
+                if sm is not None and sm.remaining_hours() < 0.5:
+                    log("INFO", f"  {sym}: menos de 30min restantes — no abrir nuevos trades")
                     continue
 
                 pid = predict(sym, verbose=False, model=chosen_model,
@@ -369,6 +443,59 @@ def _run_scan_cycle():
         log("DEBUG", traceback.format_exc())
 
 
+def _compute_simulated_balance(initial_balance: float, since_iso: str = None) -> float:
+    """
+    Calcula el balance simulado en dry-run sumando el P&L de trades cerrados
+    DENTRO DE LA SESION ACTUAL (desde since_iso).
+    Asume position_size = 5% del capital inicial por trade (sizing HALF conservador).
+    """
+    try:
+        from bot.trade_monitor import DB_PATH
+        con = sqlite3.connect(DB_PATH)
+        if since_iso:
+            rows = con.execute(
+                "SELECT pnl_pct FROM predictions "
+                "WHERE outcome IN ('WIN','LOSS') AND pnl_pct IS NOT NULL "
+                "AND outcome_date >= ?",
+                (since_iso,)
+            ).fetchall()
+        else:
+            # Sin filtro de sesion: contar TODOS los trades historicos
+            rows = con.execute(
+                "SELECT pnl_pct FROM predictions "
+                "WHERE outcome IN ('WIN','LOSS') AND pnl_pct IS NOT NULL"
+            ).fetchall()
+        con.close()
+
+        POSITION_PCT = 0.05  # 5% del capital por trade
+        sim_balance = initial_balance
+        for r in rows:
+            pnl = r[0] if isinstance(r, tuple) else r["pnl_pct"]
+            sim_balance += initial_balance * POSITION_PCT * (pnl / 100.0)
+        return round(max(sim_balance, 0.0), 2)
+    except Exception:
+        return initial_balance
+
+
+def _refresh_risk_balance(initial_balance: float, dry_run: bool, session_start_iso: str = None, since_iso: str = None):
+    """Actualiza el risk guard con el balance actual (real o simulado)."""
+    if not initial_balance or initial_balance <= 0:
+        return  # Sin capital base valido, no actualizar (evita DRAWDOWN_100%)
+    try:
+        effective_since = since_iso if since_iso is not None else session_start_iso
+        if dry_run:
+            bal = _compute_simulated_balance(initial_balance, since_iso=effective_since)
+        else:
+            from bot.capital_profile import _get_usdt_balance
+            bal = _get_usdt_balance()
+            if not bal or bal <= 0:
+                bal = _compute_simulated_balance(initial_balance, since_iso=effective_since)
+        if bal and bal > 0:
+            update_balance(bal)
+    except Exception:
+        pass
+
+
 def run(max_hours: float = None, dry_run: bool = None):
     """Loop principal con cap de 12h."""
     if max_hours is None:
@@ -380,24 +507,43 @@ def run(max_hours: float = None, dry_run: bool = None):
     print(sm.report())
 
     # Inicializar risk_guard con el balance actual
+    # Binance testnet suele devolver 0 USDT — fallback al estado guardado o .env
     try:
         from bot.capital_profile import _get_usdt_balance
         balance = _get_usdt_balance()
     except Exception:
-        balance = float(os.environ.get("CRYPTO_PORTFOLIO", "500"))
+        balance = 0.0
+
+    if not balance or balance <= 0:
+        # Sin balance real: usar initial_capital del estado guardado
+        try:
+            from bot.risk_guard import _load_state as _rg_load
+            _saved = _rg_load()
+            balance = (_saved.get("initial_capital") or
+                       _saved.get("current_balance") or 0.0)
+        except Exception:
+            balance = 0.0
+        if not balance or balance <= 0:
+            balance = float(os.environ.get("CRYPTO_PORTFOLIO", "480"))
+
     init_session(balance)
+    # Recalcular balance real sumando TODOS los trades historicos cerrados
+    _refresh_risk_balance(balance, dry_run, since_iso=None)
     print(risk_report())
 
     if is_tripped():
-        log("ERROR", f"Risk guard activo: {trip_reason()}. Reset manual requerido.")
+        log("ERROR", "Risk guard activo: %s. Reset manual requerido." % trip_reason())
         return
 
+    # Timestamp de inicio de sesion para filtrar P&L simulado (solo trades nuevos)
+    session_start_iso = datetime.now().isoformat()
     last_scan_at = 0.0
 
     while sm.should_continue():
         now_ts = time.time()
         st = sm.state()
-        log("INFO", f"  [LOOP] state={st} elapsed={sm.elapsed_hours():.2f}h remaining={sm.remaining_hours():.2f}h")
+        log("INFO", "  [LOOP] state=%s elapsed=%.2fh remaining=%.2fh" % (
+            st, sm.elapsed_hours(), sm.remaining_hours()))
 
         # FORCE_CLOSE -> cerrar todo y salir
         if sm.must_force_close():
@@ -407,20 +553,24 @@ def run(max_hours: float = None, dry_run: bool = None):
 
         # Risk guard tripped -> solo monitorear (no abrir nuevas)
         if is_tripped():
-            log("WARN", f"  Risk guard tripped ({trip_reason()}) — solo monitor")
+            log("WARN", "  Risk guard tripped (%s) — solo monitor" % trip_reason())
             _monitor_open_positions(force_close_all=False)
+            _refresh_risk_balance(balance, dry_run, since_iso=None)
             sm.sleep(MONITOR_INTERVAL_SEC)
             continue
 
         # Monitor de posiciones siempre
         _monitor_open_positions(force_close_all=False)
 
+        # Actualizar balance en risk guard (todos los trades acumulados)
+        _refresh_risk_balance(balance, dry_run, since_iso=None)
+
         # Scan solo en estado OPEN y cada SCAN_INTERVAL_SEC
         if sm.can_open_new_trades() and (now_ts - last_scan_at) >= SCAN_INTERVAL_SEC:
-            _run_scan_cycle()
+            _run_scan_cycle(session_start_iso)
             last_scan_at = now_ts
         elif not sm.can_open_new_trades():
-            log("INFO", f"  Estado {st} — no se abren nuevas entradas")
+            log("INFO", "  Estado %s - no se abren nuevas entradas" % st)
 
         sm.sleep(MONITOR_INTERVAL_SEC)
 
@@ -431,11 +581,21 @@ def run(max_hours: float = None, dry_run: bool = None):
 
 
 if __name__ == "__main__":
-    # parsing simple de args
+    args = sys.argv[1:]
     hours = None
-    for i, a in enumerate(sys.argv):
-        if a == "--hours" and i + 1 < len(sys.argv):
-            hours = float(sys.argv[i + 1])
+    dry = None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--hours" and i + 1 < len(args):
+            hours = float(args[i + 1])
+            i += 2
         elif a == "--dry-run":
-            os.environ["CRYPTO_DRY_RUN"] = "true"
-    run(max_hours=hours)
+            dry = True
+            i += 1
+        elif a == "--live":
+            dry = False
+            i += 1
+        else:
+            i += 1
+    run(max_hours=hours, dry_run=dry)

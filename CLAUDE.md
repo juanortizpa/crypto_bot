@@ -100,12 +100,16 @@ Salida: GREEN (3+), YELLOW (1-2), RED (3+ factores negativos)
 
 ### 2. 6 Modelos Competitivos
 Todos entrenados en los mismos datos (4.6M klines):
-- **A** (Scalp Conservative, 4h, ~85% WR)
-- **B** (Momentum Burst, 2h, **97.3% WR**) ⭐ Mejor en backtest
-- **C** (News Spike, 4h, ~80%)
-- **D** (Dip Scalper, 8h, ~85%)
-- **E** (Breakout Micro, 6h, ~82%)
-- **F** (Trend Rider, 12h, ~78%)
+- **A** (Scalp Conservative, 4h)
+- **B** (Momentum Burst, 2h)
+- **C** (News Spike, 4h)
+- **D** (Dip Scalper, 8h)
+- **E** (Breakout Micro, 6h)
+- **F** (Trend Rider, 12h)
+
+⚠️ Los WR históricos (~78-97%) se midieron con la contabilidad pre-v1.1
+(inflada — ver AUDITORIA_2026-06-10.md). Métrica de referencia desde v1.1:
+expectancy neta de comisiones.
 
 Sistema elige modelo según condiciones del mercado.
 
@@ -291,6 +295,6 @@ GROUP BY model ORDER BY wr_pct DESC;
 
 ---
 
-**Última actualización:** 2026-05-15
-**Versión:** 1.0 (Production Ready)
+**Última actualización:** 2026-06-10
+**Versión:** 1.1 (contabilidad honesta + risk guards — ver AUDITORIA_2026-06-10.md)
 **Autor:** Juan (firu)

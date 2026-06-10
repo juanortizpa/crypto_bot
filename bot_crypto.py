@@ -2,7 +2,7 @@
 CLI del Bot de Trading Crypto.
 
 USO:
-  python bot_crypto.py run               → corre el bot por 12h (cap maximo)
+  python bot_crypto.py run               → corre el bot por 12h (cap maximo real) / 17h (dry-run)
   python bot_crypto.py run --hours 6     → corre por N horas
   python bot_crypto.py risk              → estado del risk guard (DD, daily, etc.)
   python bot_crypto.py risk-reset        → resetea risk guard tras revisar
@@ -37,13 +37,17 @@ def main():
     cmd = sys.argv[1].lower()
 
     if cmd == "run":
-        # Loop principal con cap de 12h
+        # Loop principal: cap 12h en real, 17h en dry-run
         hours = None
+        is_dry_run = False
         for i, a in enumerate(sys.argv):
             if a == "--hours" and i + 1 < len(sys.argv):
                 hours = float(sys.argv[i + 1])
             elif a == "--dry-run":
                 os.environ["CRYPTO_DRY_RUN"] = "true"
+                is_dry_run = True
+        if hours is None:
+            hours = float(os.environ.get("CRYPTO_SESSION_HOURS", "12"))
         from bot.runner import run
         run(max_hours=hours)
 
@@ -107,7 +111,14 @@ def main():
                 price = get_price(sym) if not is_stale else None
                 if price and not is_stale:
                     pnl_pct = (price - entry) / entry * 100
-                    outcome = "WIN" if pnl_pct > 0 else "LOSS"
+                    # Contabilidad fee-aware (igual que predictions/runner)
+                    from bot.predictions import FEE_RT_PCT
+                    if pnl_pct > FEE_RT_PCT:
+                        outcome = "WIN"
+                    elif pnl_pct < -FEE_RT_PCT:
+                        outcome = "LOSS"
+                    else:
+                        outcome = "BE"
                     con.execute("""
                         UPDATE predictions
                         SET outcome=?, price_at_outcome=?, pnl_pct=?,
@@ -163,6 +174,136 @@ def main():
         from bot.ml_audit import report
         report()
 
+    elif cmd == "ml-reload":
+        from bot.ml_inference import reload_models
+        reload_models()
+        print("\n  Cache de modelos ML limpiado. Los thresholds de *_best.json se aplicarán en la próxima predicción.\n")
+
+    elif cmd == "ml-debug":
+        # Diagnóstico detallado: features en vivo + probs por modelo
+        if len(sys.argv) < 3:
+            print("  Uso: python bot_crypto.py ml-debug BTCUSDT")
+            return
+        sym = sys.argv[2].upper()
+        if not sym.endswith("USDT"):
+            sym += "USDT"
+        print(f"\n  ML-DEBUG: calculando features y probabilidades para {sym}...\n")
+        try:
+            from bot.ml_inference import (
+                compute_features_live, _load_all_models, _model_predict_proba
+            )
+            import json as _json
+
+            print(f"  [1/3] Calculando features en vivo (descarga ~7d de velas 1m)...")
+            feats = compute_features_live(sym)
+            if feats is None:
+                print(f"  ERROR: no se pudo computar features para {sym}")
+                print(f"         (datos insuficientes o error de red)")
+                return
+
+            # Mostrar features clave
+            KEY_FEATS = [
+                "rsi14_1m", "rsi14_5m", "rsi14_1h", "rsi14_4h",
+                "mom_1h", "mom_4h", "mom_12h", "mom_24h",
+                "drawdown_7d", "atr_pct_1h", "atr_pct_5m",
+                "vol_ratio_1h", "vol_zscore_7d", "taker_buy_ratio_1h",
+                "fng_value", "fng_delta_7d",
+                "dxy_close", "sp500_close", "vix_close", "gold_close",
+                "funding_last", "funding_avg_24h",
+                "btc_trend_24h", "eth_trend_24h", "rs_vs_btc_4h",
+            ]
+            print(f"\n  Features clave ({sym}):")
+            for f in KEY_FEATS:
+                v = feats.get(f)
+                warn = " ⚠️  (= 0, puede ser dato faltante)" if v == 0 and f in (
+                    "dxy_close", "sp500_close", "vix_close", "gold_close",
+                    "fng_value", "funding_last") else ""
+                print(f"    {f:<28} {v!s:>12}{warn}")
+
+            print(f"\n  [2/3] Cargando modelos ML...")
+            models = _load_all_models()
+            loaded = {k: v for k, v in models.items() if v is not None}
+            if not loaded:
+                print(f"  ERROR: No se cargó ningún modelo. Verifica model_d_training/results/")
+                return
+
+            print(f"\n  [3/3] Probabilidades por modelo:")
+            print(f"  {'Modelo':<8} {'Prob':>8} {'Threshold':>11} {'GO?':>6} {'Margen':>8}")
+            print(f"  {'-'*48}")
+            votes = 0
+            for name, info in loaded.items():
+                prob = _model_predict_proba(info, feats)
+                if prob is None:
+                    print(f"  {name:<8} {'ERROR':>8}")
+                    continue
+                thr = info["threshold"]
+                go = prob >= thr
+                margin = prob - thr
+                flag = "✓ GO" if go else "✗ NO"
+                margen_s = f"{margin:+.4f}"
+                if go:
+                    votes += 1
+                print(f"  {name:<8} {prob:>8.4f} {thr:>11.4f} {flag:>6} {margen_s:>8}")
+
+            total = len(loaded)
+            if votes == total:
+                decision = "FULL ✅"
+            elif votes >= (total // 2) + 1:
+                decision = "HALF ⚡"
+            elif votes >= 1:
+                decision = "WATCH 👁"
+            else:
+                decision = "ABORT ❌"
+            print(f"\n  DECISION ENSEMBLE: {decision}  ({votes}/{total} modelos aprobaron)\n")
+
+            # Consejo
+            if votes == 0:
+                print(f"  DIAGNÓSTICO: Ningún modelo supera su threshold.")
+                print(f"    → Posible causa: features macro (DXY/SP500/VIX) = 0")
+                print(f"       (verifica que model_d_training/state/data_extended.db tiene data reciente)")
+                print(f"    → O: condiciones actuales fuera del rango de entrenamiento")
+                print(f"       (el ML se entrenó con RSI≤55 y drawdown≤-2%)")
+                rsi_val = feats.get("rsi14_1h", "?")
+                dd_val  = feats.get("drawdown_7d", "?")
+                print(f"    → RSI 1h actual: {rsi_val}  (entrenamiento: ≤55)")
+                print(f"    → Drawdown 7d: {dd_val}%  (entrenamiento: ≤-2%)")
+            print()
+
+        except Exception as e:
+            import traceback
+            print(f"  Error en ml-debug: {e}")
+            print(traceback.format_exc())
+
+    elif cmd == "llm":
+        # Análisis LLM standalone para cualquier par
+        sym_arg = sys.argv[2].upper() if len(sys.argv) >= 3 else "BTC"
+        sym_clean = sym_arg.replace("USDT", "")
+        sym_full  = sym_clean + "USDT"
+        print(f"\n  Consultando Claude para análisis de {sym_clean}...\n")
+        from bot.llm_analyst import analyze_news
+        from bot.crypto_news import get_news_signal
+        signal = get_news_signal(sym_full)
+        # Extraer todos los titulares del dict de detalles (son strings)
+        headlines = []
+        for v in signal.get("details", {}).values():
+            headlines.extend(v.get("headlines", []))
+        result = analyze_news(headlines, sym_clean)
+        emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "🟡"}.get(result["sentiment"], "⚪")
+        print(f"  ══════════════════════════════════════════════════")
+        print(f"  🤖  Claude LLM — Análisis de sentimiento")
+        print(f"  ══════════════════════════════════════════════════")
+        print(f"  Par:          {sym_clean}/USDT")
+        print(f"  Sentimiento:  {emoji}  {result['sentiment']}")
+        print(f"  Score:        {result['score']:+.2f}  (rango -1.0 a +1.0)")
+        print(f"  Confianza:    {result['confidence']:.0%}")
+        if result.get("key_signals"):
+            print(f"  Señales clave:")
+            for sig in result["key_signals"]:
+                print(f"    • {sig}")
+        print(f"  Razonamiento: {result['reasoning']}")
+        print(f"  Modelo LLM:   claude-haiku-4-5 (Anthropic)")
+        print(f"  ══════════════════════════════════════════════════\n")
+
     elif cmd == "events":
         from bot.macro_events import upcoming_event, get_active_regime_modifier
         print(f"\n  Regimen macro actual: {get_active_regime_modifier()}\n")
@@ -206,8 +347,33 @@ def main():
             symbol = sys.argv[2].upper()
             if not symbol.endswith("USDT"):
                 symbol += "USDT"
-        from bot.crypto_news import print_news_report
+        from bot.crypto_news import print_news_report, get_news_signal
         print_news_report(symbol)
+
+        # Análisis LLM de sentimiento con Claude
+        sym_clean = (symbol or "CRYPTO").replace("USDT", "")
+        print(f"\n  ══════════════════════════════════════════════════")
+        print(f"  🤖  ANÁLISIS LLM (Claude) — Sentimiento {sym_clean}")
+        print(f"  ══════════════════════════════════════════════════")
+        try:
+            from bot.llm_analyst import analyze_news
+            signal = get_news_signal(symbol or "BTCUSDT")
+            headlines = []
+            for v in signal.get("details", {}).values():
+                headlines.extend(v.get("headlines", []))
+            llm = analyze_news(headlines, sym_clean)
+            emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "🟡"}.get(llm["sentiment"], "⚪")
+            print(f"  Sentimiento:  {emoji}  {llm['sentiment']}")
+            print(f"  Score:        {llm['score']:+.2f}  (confianza: {llm['confidence']:.0%})")
+            if llm.get("key_signals"):
+                print(f"  Señales clave:")
+                for sig in llm["key_signals"]:
+                    print(f"    • {sig}")
+            print(f"  Análisis:     {llm['reasoning']}")
+            print(f"  Fuente:       Claude claude-haiku-4-5 (Anthropic API)")
+        except Exception as e:
+            print(f"  (LLM no disponible: {e})")
+        print(f"  ══════════════════════════════════════════════════\n")
 
     elif cmd == "compare":
         from bot.predictions import compare_models
@@ -261,23 +427,28 @@ def main():
         _help()
 
 
+
+
 def _help():
     print("""
   ============================================================
-              CRYPTO TRADING BOT — CLI
+              CRYPTO TRADING BOT -- CLI
   ============================================================
-   run [--hours N] [--dry-run]   Loop principal (max 12h)
+   run [--hours N] [--dry-run]   Loop principal (max 12h real / 17h dry-run)
    risk                          Estado del risk guard
    risk-reset [--force]          Resetea risk guard
    events                        Eventos macro proximos
+   llm <PAR>                     Analisis LLM (Claude) para un par
    ml <PAR>                      Inferencia ML standalone para un par
+   ml-debug <PAR>                Diagnostico ML: features + probabilidades en vivo
    ml-eval                       Evalua retrospectivamente decisiones ML pasadas
    ml-report                     Reporte de calidad de decisiones ML
+   ml-reload                     Recarga thresholds desde *_best.json sin reiniciar
    cleanup [PAR]                 Cierra todas las preds PENDING (o solo PAR)
    scan                          Escanea pares, rankea por gate
    gate <PAR>                    Gate de 16 factores para un par
    predict <PAR>                 Guarda prediccion (sin comprar)
-   news [PAR]                    Sentimiento de noticias crypto
+   news [PAR]                    Noticias + analisis LLM de sentimiento
    fear                          Fear & Greed Index actual
    compare                       Tabla comparativa de 4 modelos
    pending                       Predicciones pendientes
@@ -285,7 +456,7 @@ def _help():
    outcomes                      Resuelve predicciones + compara
    status                        Test de conexion a Binance
   ============================================================
-   Sesion: cap maximo 12h. Freeze 2h antes del fin.
+   Sesion: cap 12h (real) / 17h (dry-run). Freeze 2h antes del fin.
    Cierre forzoso 15 min antes del fin (no quedan trades abiertos).
    Modelos: A=BTC Follower  B=Altcoin Season
             C=News Spike    D=Dip Buyer

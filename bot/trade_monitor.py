@@ -146,6 +146,21 @@ def record_snapshot(pred_id: int, price: float) -> dict:
         symbol=pred["symbol"],
     )
 
+    # ── NIVELES DUROS (FIX CRÍTICO) ──────────────────────────────────
+    # Las reglas R1-R8 NUNCA miraban stop_price ni target_price:
+    #   - un dump temprano atravesaba el stop sin cerrar (R1 exigia
+    #     pnl < -1.8% Y time_ratio > 0.3 — en la primera fase del trade
+    #     no habia NINGUN freno de perdidas)
+    #   - al tocar target, H1/H2 devolvian HOLD y la ganancia solo se
+    #     cobraba tras devolver 70% del pico (R3)
+    # El stop y el target del plan de trade SIEMPRE mandan sobre las reglas.
+    stop_price   = pred["stop_price"]
+    target_price = pred["target_price"]
+    if stop_price and price <= stop_price:
+        decision, reason = "EXIT", "STOP_HIT_HARD"
+    elif target_price and price >= target_price:
+        decision, reason = "EXIT", "TARGET_HIT"
+
     cur = con.execute("""
         INSERT INTO trade_snapshots
           (prediction_id, snapshot_time, elapsed_h, price, pnl_pct,
@@ -207,21 +222,25 @@ def _evaluate_rules(
     """
     Decide HOLD o EXIT basado en reglas.
 
+    FILOSOFIA: dejar correr winners hasta el target (+3%).
+    Solo cerrar cuando hay señal CLARA de crash o perdida confirmada.
+    Un trade positivo NUNCA se cierra por reglas menores.
+
     Overrides de retencion (se evaluan primero):
-      H1: precio casi en target (>97%) -> dejar llegar
-      H2: fase temprana (<40% del tiempo) con momentum positivo
+      H1: precio casi en target (>95%) -> dejar llegar
+      H2: P&L positivo -> aguantar, no cerrar por volatilidad normal
 
     Salidas defensivas (alta prioridad — protegen capital):
       R6: noticia bearish o sentiment SPIKE BEAR durante el trade -> EXIT
       R7: cambio de regimen macro (evento CRITICAL inminente) -> EXIT
-      R8: timeout absoluto por sesion 12h o tiempo de trade superado
+      R8: timeout de sesion forzado; o 2x max_hours con P&L negativo
 
-    Señales de salida tecnicas:
-      R1: perdida > 1.5% pasado el 30% del tiempo
-      R2: 4+ intervalos consecutivos bajando
-      R3: MFE fue > +1% y el precio retrocedio >60% del MFE
-      R4: a mitad del tiempo todavia en rojo (< -0.3%)
-      R5: velocity y aceleracion negativas mientras esta en perdida
+    Señales de salida tecnicas (umbrales altos — evitar salir temprano):
+      R1: perdida > 1.8% pasado el 30% del tiempo (cerca del stop real -2.5%)
+      R2: 10+ intervalos consecutivos bajando Y perdida > 0.5%
+      R3: MFE fue > 2.0% y precio retrocedio >70% del MFE
+      R4: a 70% del tiempo con perdida > 1.0% (trade muerto)
+      R5: caida muy acelerada (velocity < -0.4 Y accel < -0.2) Y perdida > 0.5%
     """
     time_ratio = elapsed_h / max_hours if max_hours > 0 else 1.0
 
@@ -234,17 +253,19 @@ def _evaluate_rules(
             return "EXIT", "R8_SESSION_FORCE_CLOSE"
     except Exception:
         pass
-    # Timeout duro de trade (max_hours del propio trade)
+    # Timeout de trade: solo cerrar si estamos en perdida o muy pasados del limite
     if elapsed_h >= max_hours:
-        return "EXIT", "R8_TRADE_TIMEOUT"
+        if pnl_pct < 0:
+            return "EXIT", "R8_TRADE_TIMEOUT"          # perdiendo -> cerrar
+        elif elapsed_h >= max_hours * 2.0:
+            return "EXIT", "R8_TRADE_TIMEOUT_EXTENDED"  # 2x el tiempo -> cerrar igualsi positivo
+        # else: positivo al timeout -> NO cerrar, dejar correr hasta target
 
     # ── R7: cambio de regimen macro CRITICAL inminente ─────────────
     try:
         from bot.macro_events import get_active_regime_modifier
         regime = get_active_regime_modifier()
         if regime == "BLACKOUT":
-            # Evento CRITICAL en <1h. Si estamos en ganancia, asegurar; si
-            # estamos planos o en perdida, salir tambien.
             if pnl_pct >= 0:
                 return "EXIT", "R7_REGIME_BLACKOUT_TAKE_PROFIT"
             return "EXIT", "R7_REGIME_BLACKOUT_CUT_LOSS"
@@ -259,9 +280,7 @@ def _evaluate_rules(
             score = sent.get("score", 0.0)
             spike = sent.get("spike", False)
             overall = sent.get("overall", "NEUTRAL")
-            # Spike bearish o sentiment muy negativo durante el trade
             if spike and score < -0.2:
-                # Si estamos en ganancia, asegurar; en perdida, cortar
                 if pnl_pct > 0:
                     return "EXIT", "R6_NEWS_SPIKE_BEAR_PROTECT_GAIN"
                 return "EXIT", "R6_NEWS_SPIKE_BEAR_CUT_LOSS"
@@ -273,34 +292,45 @@ def _evaluate_rules(
     # H1: cerca del target, no interrumpir
     if target_price and entry_price and entry_price > 0:
         target_pct = (target_price - entry_price) / entry_price * 100
-        if target_pct > 0 and pnl_pct >= target_pct * 0.97:
+        if target_pct > 0 and pnl_pct >= target_pct * 0.95:
             return "HOLD", "H1_NEAR_TARGET"
 
-    # H2: fase temprana con impulso
-    if time_ratio < 0.4 and velocity is not None and velocity > 0 and pnl_pct > -0.3:
-        return "HOLD", "H2_EARLY_MOMENTUM"
+    # H2: P&L positivo -> mantener SIEMPRE salvo crash claro
+    # Un ganador no se cierra por volatilidad normal ni por tiempo
+    if pnl_pct > 0:
+        # R3 para ganadores: solo proteger si MFE fue muy alto y caemos mucho
+        if mfe > 2.0 and pnl_pct < mfe * 0.3:
+            return "EXIT", "R3_PEAK_REVERSION"
+        # R5 para ganadores: solo si hay crash muy claro desde ganancia pequeña
+        if (velocity is not None and velocity < -0.6
+                and accel is not None and accel < -0.3
+                and pnl_pct < 0.5):
+            return "EXIT", "R5_CRASH_FROM_GAIN"
+        return "HOLD", "H2_POSITIVE_PNL_HOLD"
 
-    # R1: perdida profunda sin recuperacion
-    if pnl_pct < -1.5 and time_ratio > 0.3:
+    # ─── Desde aqui solo entramos si pnl_pct <= 0 ──────────────────
+
+    # R1: perdida profunda (cerca del stop real -2.5%)
+    if pnl_pct < -1.8 and time_ratio > 0.3:
         return "EXIT", "R1_DEEP_LOSS"
 
-    # R2: momentum en contra sostenido
-    if consec_down >= 4:
+    # R2: momentum bajista sostenido Y en perdida significativa
+    if consec_down >= 10 and pnl_pct < -0.5:
         return "EXIT", "R2_CONSEC_DOWN"
 
-    # R3: retroceso desde pico (lost >60% of MFE)
-    if mfe > 1.0 and pnl_pct < mfe * 0.4:
+    # R3: retroceso desde pico significativo (solo si MFE fue relevante)
+    if mfe > 2.0 and pnl_pct < mfe * 0.3:
         return "EXIT", "R3_PEAK_REVERSION"
 
-    # R4: trade muerto a mitad del tiempo
-    if time_ratio >= 0.5 and pnl_pct < -0.3:
+    # R4: trade muerto avanzado en tiempo Y perdida moderada
+    if time_ratio >= 0.7 and pnl_pct < -1.0:
         return "EXIT", "R4_MIDPOINT_NEG"
 
-    # R5: acelerando hacia abajo en perdida
+    # R5: caida acelerada clara en perdida
     if (
-        velocity is not None and velocity < -0.15
-        and accel is not None and accel < -0.05
-        and pnl_pct < 0
+        velocity is not None and velocity < -0.4
+        and accel is not None and accel < -0.2
+        and pnl_pct < -0.5
     ):
         return "EXIT", "R5_ACCEL_DOWN"
 

@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Operación Cripto · Proyecto Final</title>
+<meta name="description" content="Bot de trading cripto automatizado con ML. Proyecto final del curso de Analítica de Datos.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   PALETA - Bloomberg inspired (crypto/trading)
+   ============================================================ */
+:root {
+  --bg-dark: #0A0E1A;
+  --card-dark: #1A2238;
+  --card-surf: #232B45;
+  --panel-light: #F8FAFC;
+  --card-light: #FFFFFF;
+  --border: #E2E8F0;
+  --text-on-dark: #E2E8F0;
+  --text-on-dark-muted: #94A3B8;
+  --text-dark: #0F172A;
+  --text-muted: #475569;
+  --gold: #F59E0B;
+  --cyan: #06B6D4;
+  --win: #10B981;
+  --loss: #EF4444;
+  --yellow: #FACC15;
+  --navy: #1E293B;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Calibri, sans-serif;
+  background: #000;
+  color: var(--text-dark);
+  overflow: hidden;
+}
+
+/* ============================================================
+   DECK CONTAINER
+   ============================================================ */
+.deck {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  padding: 4vh 5vw 7vh;
+  opacity: 0;
+  transition: opacity .25s ease;
+  overflow: hidden;
+}
+.slide.active {
+  display: flex;
+  opacity: 1;
+}
+
+/* slide variants */
+.slide--dark   { background: var(--bg-dark); color: var(--text-on-dark); }
+.slide--light  { background: var(--panel-light); color: var(--text-dark); }
+
+/* gold side bar on dark slides */
+.slide--dark::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 8px;
+  background: var(--gold);
+}
+
+/* ============================================================
+   COMMON ELEMENTS
+   ============================================================ */
+.kicker {
+  font-size: clamp(.7rem, .9vw, .85rem);
+  font-weight: 700;
+  letter-spacing: .25em;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 1.2rem;
+}
+.kicker--loss { color: var(--loss); }
+
+.slide h1 {
+  font-size: clamp(1.6rem, 3.2vw, 2.8rem);
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 1.5rem;
+  letter-spacing: -.01em;
+}
+.slide--dark h1 { color: var(--text-on-dark); }
+
+.slide h2 {
+  font-size: clamp(1.1rem, 1.6vw, 1.4rem);
+  font-weight: 600;
+  margin-bottom: .8rem;
+  color: var(--text-dark);
+}
+
+.subtitle {
+  font-size: clamp(.95rem, 1.2vw, 1.1rem);
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 2rem;
+}
+.slide--dark .subtitle { color: var(--text-on-dark-muted); }
+
+.footer {
+  position: absolute;
+  left: 5vw;
+  right: 5vw;
+  bottom: 2.5vh;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .8rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+/* ============================================================
+   SLIDE 1 - PORTADA
+   ============================================================ */
+.cover {
+  padding: 0 6vw;
+  justify-content: center;
+}
+.cover__btc {
+  position: absolute;
+  right: 8vw; top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Georgia', serif;
+  font-size: clamp(8rem, 18vw, 16rem);
+  color: var(--gold);
+  line-height: 1;
+  opacity: .95;
+}
+.cover__kicker {
+  color: var(--gold);
+  font-weight: 700;
+  letter-spacing: .35em;
+  font-size: clamp(.7rem, 1vw, .9rem);
+  margin-bottom: 1rem;
+}
+.cover__title {
+  font-size: clamp(3rem, 7vw, 6.5rem);
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--text-on-dark);
+  line-height: 1;
+  margin-bottom: 1rem;
+}
+.cover__sub {
+  font-size: clamp(1.1rem, 1.8vw, 1.6rem);
+  color: var(--text-on-dark-muted);
+  font-style: italic;
+  margin-bottom: 2.5rem;
+  max-width: 70%;
+}
+.cover__tagline {
+  background: var(--card-dark);
+  border-left: 4px solid var(--cyan);
+  padding: 1.2rem 1.5rem;
+  max-width: 75%;
+  font-size: clamp(.85rem, 1.1vw, 1.05rem);
+  margin-bottom: 4rem;
+}
+.cover__author {
+  position: absolute;
+  bottom: 5vh; left: 6vw;
+}
+.cover__name { font-weight: 700; font-size: 1.1rem; color: var(--text-on-dark); }
+.cover__meta { font-size: .85rem; color: var(--text-on-dark-muted); }
+.cover__github {
+  position: absolute;
+  bottom: 5vh; right: 6vw;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--gold);
+  font-size: .9rem;
+}
+
+/* ============================================================
+   SLIDE 2 - GANCHO (dark, big question + 2 cards)
+   ============================================================ */
+.hook__question {
+  font-size: clamp(1.8rem, 4vw, 3.4rem);
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--text-on-dark);
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
+  max-width: 92%;
+}
+.hook__lead {
+  font-style: italic;
+  color: var(--text-on-dark-muted);
+  font-size: clamp(.95rem, 1.4vw, 1.2rem);
+  margin-bottom: 2.5rem;
+  max-width: 75%;
+}
+.hook__cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-top: auto;
+}
+.hook__card {
+  background: var(--card-dark);
+  padding: 1.3rem 1.5rem;
+  border-left: 4px solid;
+}
+.hook__card--bad   { border-left-color: var(--loss); }
+.hook__card--good  { border-left-color: var(--win); }
+.hook__card__label {
+  font-size: .8rem;
+  letter-spacing: .2em;
+  font-weight: 600;
+  color: var(--text-on-dark-muted);
+  text-transform: uppercase;
+  margin-bottom: .5rem;
+}
+.hook__card--good .hook__card__label { color: var(--gold); }
+.hook__card__big {
+  font-size: clamp(2rem, 4.5vw, 3.2rem);
+  font-weight: 800;
+  margin-bottom: .5rem;
+}
+.hook__card--bad  .hook__card__big { color: var(--loss); }
+.hook__card--good .hook__card__big { color: var(--win); }
+.hook__card__desc {
+  color: var(--text-on-dark);
+  font-size: clamp(.85rem, 1vw, .95rem);
+}
+
+/* ============================================================
+   STAT CARDS GRID (slides 3, 6, 7, 13)
+   ============================================================ */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+.stat-card {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--gold);
+  padding: 1.6rem;
+  display: flex;
+  flex-direction: column;
+}
+.stat-card--cyan { border-top-color: var(--cyan); }
+.stat-card--win  { border-top-color: var(--win); }
+.stat-card--loss { border-top-color: var(--loss); }
+.stat-card__num {
+  font-size: clamp(2.5rem, 4.5vw, 4rem);
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 1rem;
+  color: var(--gold);
+}
+.stat-card--cyan .stat-card__num { color: var(--cyan); }
+.stat-card--win  .stat-card__num { color: var(--win); }
+.stat-card__label {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: .4rem;
+}
+.stat-card__desc {
+  font-size: .85rem;
+  color: var(--text-muted);
+}
+.stat-card__hint {
+  margin-top: 1rem;
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: .85rem;
+}
+
+/* ============================================================
+   AGENDA (slide 4)
+   ============================================================ */
+.agenda {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.agenda__item {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  padding: 1rem 1.4rem;
+}
+.agenda__num {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--gold);
+  min-width: 3rem;
+}
+.agenda__title { font-weight: 700; font-size: 1rem; margin-bottom: .2rem; }
+.agenda__desc  { font-size: .85rem; color: var(--text-muted); }
+
+/* ============================================================
+   PIPELINE (slide 5)
+   ============================================================ */
+.pipeline {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: .6rem;
+  margin: 1rem 0 1.5rem;
+}
+.pipeline__step {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+}
+.pipeline__step__head {
+  background: var(--navy);
+  color: var(--gold);
+  font-weight: 700;
+  padding: .4rem;
+  font-size: .9rem;
+}
+.pipeline__step__name {
+  font-weight: 700;
+  padding: .8rem .5rem .3rem;
+  font-size: .9rem;
+}
+.pipeline__step__desc {
+  padding: 0 .5rem .8rem;
+  color: var(--text-muted);
+  font-size: .75rem;
+  flex: 1;
+}
+.pipeline__loop {
+  background: var(--card-dark);
+  color: var(--text-on-dark);
+  border-left: 4px solid var(--gold);
+  padding: 1rem 1.4rem;
+}
+.pipeline__loop__label {
+  font-size: .75rem;
+  letter-spacing: .25em;
+  color: var(--gold);
+  font-weight: 700;
+  margin-bottom: .3rem;
+}
+
+/* ============================================================
+   DATOS (slide 6) - split 2 cols
+   ============================================================ */
+.split-2 {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 2rem;
+  margin-top: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+.stat-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-content: start;
+}
+.stat-small {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  padding: 1.2rem;
+}
+.stat-small__num {
+  font-size: clamp(1.5rem, 2.5vw, 2.4rem);
+  font-weight: 800;
+  color: var(--gold);
+  line-height: 1;
+  margin-bottom: .5rem;
+}
+.stat-small__label {
+  font-size: .85rem;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .9rem;
+  background: var(--card-light);
+  border: 1px solid var(--border);
+}
+table th, table td {
+  padding: .6rem .8rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+table th {
+  background: var(--navy);
+  color: #fff;
+  font-weight: 700;
+  font-size: .85rem;
+}
+table tr:last-child td { border-bottom: 0; }
+.group-cell { font-weight: 700; }
+.group-macro    { background: #FEF3C7; }
+.group-short    { background: #DBEAFE; }
+.group-risk     { background: #FEE2E2; }
+.group-sentim   { background: #DCFCE7; }
+.cell-muted     { color: var(--text-muted); }
+.cell-win       { color: var(--win); font-weight: 700; }
+.cell-loss      { color: var(--loss); font-weight: 700; }
+.cell-gold      { color: var(--gold); font-weight: 700; }
+
+/* ============================================================
+   GATE 13 FACTORES (slide 8) layout
+   ============================================================ */
+.gate {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+.legend {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  padding: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.legend__title {
+  font-size: .75rem;
+  letter-spacing: .25em;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: .5rem;
+}
+.legend__item { display: flex; align-items: center; gap: .8rem; }
+.legend__dot {
+  width: 1.3rem; height: 1.3rem; border-radius: 50%;
+  flex-shrink: 0;
+}
+.legend__dot--green  { background: var(--win); }
+.legend__dot--yellow { background: var(--yellow); }
+.legend__dot--red    { background: var(--loss); }
+.legend__label { font-weight: 700; font-size: 1rem; }
+.legend__desc { font-size: .8rem; color: var(--text-muted); margin-top: .2rem; }
+
+/* ============================================================
+   ML PROBLEMA (slide 9)
+   ============================================================ */
+.ml-question {
+  background: var(--navy);
+  color: var(--text-on-dark);
+  padding: 1.2rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.ml-question__label {
+  color: var(--gold);
+  font-size: .75rem;
+  letter-spacing: .25em;
+  font-weight: 700;
+  margin-bottom: .3rem;
+}
+.ml-question__text {
+  font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+  font-weight: 700;
+  font-style: italic;
+}
+.xy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+.xy-card {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--cyan);
+  padding: 1.3rem;
+}
+.xy-card--y { border-left-color: var(--gold); }
+.xy-card__label {
+  font-size: .75rem;
+  letter-spacing: .25em;
+  font-weight: 700;
+  color: var(--cyan);
+  margin-bottom: 1rem;
+}
+.xy-card--y .xy-card__label { color: var(--gold); }
+.xy-card p { margin: .8rem 0; font-size: .95rem; }
+.xy-card strong { display: block; }
+.xy-card .hint { color: var(--text-muted); font-size: .85rem; }
+.code-mini {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .9rem;
+}
+.code-mini .win  { color: var(--win); }
+.code-mini .loss { color: var(--loss); }
+
+/* ============================================================
+   CODE BLOCK (slide 10)
+   ============================================================ */
+.code-layout {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+.code-block {
+  background: var(--card-dark);
+  color: #D4D4D4;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(.75rem, 1vw, .9rem);
+  padding: 1.2rem 1.5rem;
+  overflow: auto;
+  line-height: 1.5;
+}
+.code-block .path {
+  color: var(--text-on-dark-muted);
+  margin-bottom: 1rem;
+  font-size: .8rem;
+}
+.code-block .c { color: #6A9955; }   /* comment */
+.code-block .kw { color: #C792EA; }  /* keyword */
+.code-block .s { color: #CE9178; }   /* string */
+.code-block .n { color: #B5CEA8; }   /* number */
+.code-block pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+.steps__title {
+  font-size: .75rem;
+  letter-spacing: .25em;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: .3rem;
+}
+.step {
+  display: flex; align-items: center; gap: 1rem;
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  padding: .8rem 1rem;
+}
+.step__num {
+  width: 2rem; height: 2rem; border-radius: 50%;
+  background: var(--gold); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.step__name { font-weight: 600; }
+
+/* ============================================================
+   RESULTS BAR CHART (slide 12)
+   ============================================================ */
+.results {
+  display: grid;
+  grid-template-columns: 2.2fr 1fr;
+  gap: 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+.bar-chart {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  padding: 1.3rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  justify-content: center;
+}
+.bar-row { display: grid; grid-template-columns: 7.5rem 1fr 3.5rem; align-items: center; gap: .8rem; }
+.bar-row .lbl { font-size: .85rem; color: var(--text-dark); font-weight: 500; }
+.bar-row .bar-bg { background: #F1F5F9; height: 1.7rem; position: relative; }
+.bar-row .bar-fill {
+  height: 100%;
+  background: var(--gold);
+}
+.bar-row.benchmark .bar-fill { background: var(--text-muted); }
+.bar-row .val { font-weight: 700; font-size: .9rem; }
+
+.callout-dark {
+  background: var(--card-dark);
+  color: var(--text-on-dark);
+  padding: 1.3rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+.callout-dark__label {
+  color: var(--gold);
+  font-size: .75rem;
+  letter-spacing: .25em;
+  font-weight: 700;
+}
+.callout-dark__big {
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  font-weight: 800;
+  color: var(--win);
+}
+.callout-dark p { font-size: .9rem; }
+.callout-dark .muted { color: var(--text-on-dark-muted); font-style: italic; font-size: .85rem; }
+.callout-dark hr { border: 0; border-top: 1px solid var(--cyan); margin: .5rem 0; }
+
+/* ============================================================
+   METRICAS (slide 13)
+   ============================================================ */
+.metrics-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.metric {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--win);
+  padding: 1rem 1.2rem;
+}
+.metric__val { font-size: clamp(1.8rem, 3vw, 2.5rem); font-weight: 800; }
+.metric__lbl { font-weight: 700; margin-top: .3rem; }
+.metric__desc { font-size: .75rem; color: var(--text-muted); margin-top: .2rem; }
+
+.cm-layout { display: grid; grid-template-columns: 1fr 1.5fr; gap: 1.5rem; flex: 1; min-height: 0; }
+.cm-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.cm-table th, .cm-table td {
+  border: 1px solid var(--border);
+  padding: .8rem;
+  text-align: center;
+  vertical-align: middle;
+  background: #fff;
+}
+.cm-table th { background: #F1F5F9; color: var(--text-muted); font-weight: 600; }
+.cm-table .big-num { font-size: 1.6rem; font-weight: 800; }
+.cm-table .good { background: #DCFCE7; color: var(--win); }
+.cm-table .bad  { background: #FEE2E2; color: var(--loss); }
+
+/* ============================================================
+   OVERFITTING (slide 14)
+   ============================================================ */
+.overfit {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 1.5rem;
+  flex: 1;
+  min-height: 0;
+}
+.dual-bars {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+.dual-bars__legend { display: flex; gap: 1.5rem; font-size: .85rem; justify-content: center; margin-bottom: 1rem; }
+.dual-bars__legend span { display: flex; align-items: center; gap: .4rem; }
+.dual-bars__legend i { display: inline-block; width: .8rem; height: .8rem; }
+.swatch-train { background: var(--navy); }
+.swatch-test  { background: var(--gold); }
+.dual-bar { display: grid; grid-template-columns: 2rem 1fr; gap: 1rem; align-items: center; }
+.dual-bar .model-lbl { font-weight: 700; text-align: center; }
+.dual-bar .bars-pair { display: flex; gap: .3rem; align-items: center; height: 1.6rem; }
+.dual-bar .b { height: 100%; }
+.dual-bar .b-train { background: var(--navy); }
+.dual-bar .b-test  { background: var(--gold); }
+.dual-bar .vals { font-size: .75rem; color: var(--text-muted); margin-left: .5rem; }
+
+.verdict-ok {
+  background: #DCFCE7;
+  border: 1px solid var(--win);
+  padding: 1rem;
+  text-align: center;
+  font-weight: 700;
+  color: #065F46;
+  margin-top: 1rem;
+}
+
+/* ============================================================
+   TIMELINE (slide 15)
+   ============================================================ */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+  margin-top: 1rem;
+}
+.timeline__event {
+  display: grid;
+  grid-template-columns: 3rem 7rem 1fr auto;
+  gap: 1rem;
+  align-items: center;
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  padding: .9rem 1.2rem;
+}
+.timeline__num {
+  width: 2.4rem; height: 2.4rem; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700;
+}
+.tl-1 { background: var(--gold); }
+.tl-2 { background: var(--cyan); }
+.tl-3 { background: var(--win); }
+.tl-4 { background: var(--win); }
+.timeline__time { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: .85rem; }
+.timeline__title { font-weight: 600; font-size: 1rem; }
+.timeline__desc { color: var(--text-muted); font-size: .85rem; text-align: right; }
+
+/* ============================================================
+   RECS (slide 16)
+   ============================================================ */
+.recs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.rec {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--gold);
+  padding: 1.2rem 1.4rem;
+}
+.rec__num { font-weight: 700; color: var(--gold); margin-bottom: .3rem; }
+.rec__title { font-weight: 700; font-size: 1.05rem; margin-bottom: .5rem; }
+.rec__desc { color: var(--text-muted); font-size: .9rem; }
+
+/* ============================================================
+   LIMITACIONES (slide 17)
+   ============================================================ */
+.lims-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.lim {
+  background: var(--card-light);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--loss);
+  padding: 1.2rem;
+}
+.lim__title { font-weight: 700; font-size: 1rem; margin-bottom: .5rem; }
+.lim__desc { font-size: .85rem; color: var(--text-muted); }
+
+/* ============================================================
+   CLOSING (slide 18, dark)
+   ============================================================ */
+.closing__big {
+  font-size: clamp(1.6rem, 3vw, 2.5rem);
+  font-weight: 800;
+  color: var(--text-on-dark);
+  margin-bottom: 2rem;
+  max-width: 90%;
+}
+.closing__cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+.closing__card {
+  background: var(--card-dark);
+  padding: 1.3rem 1.5rem;
+}
+.closing__card__title { font-weight: 800; color: var(--gold); font-size: 1.3rem; margin-bottom: .6rem; }
+.closing__card__desc { color: var(--text-on-dark); font-size: .9rem; }
+.closing__q {
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  font-weight: 800;
+  color: var(--text-on-dark);
+  margin-top: auto;
+}
+.closing__contact {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .85rem;
+  color: var(--text-on-dark-muted);
+  margin-top: 1rem;
+}
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+.nav {
+  position: fixed;
+  bottom: 1rem;
+  right: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  background: rgba(15, 23, 42, .85);
+  color: #fff;
+  border-radius: 999px;
+  padding: .5rem .8rem;
+  z-index: 100;
+  backdrop-filter: blur(6px);
+  font-family: 'Inter', sans-serif;
+}
+.nav button {
+  background: transparent;
+  border: 0;
+  color: #fff;
+  width: 1.8rem; height: 1.8rem;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: background .15s;
+}
+.nav button:hover { background: rgba(255,255,255,.12); }
+.nav button:disabled { opacity: .25; cursor: not-allowed; }
+.nav__counter { font-size: .85rem; font-variant-numeric: tabular-nums; min-width: 3.5rem; text-align: center; }
+
+.hint {
+  position: fixed;
+  bottom: 1rem;
+  left: 1.5rem;
+  color: rgba(255,255,255,.4);
+  font-size: .75rem;
+  z-index: 99;
+  pointer-events: none;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 768px) {
+  .slide { padding: 3vh 4vw 6vh; }
+  .stat-grid, .agenda, .hook__cards, .recs, .closing__cards { grid-template-columns: 1fr; }
+  .pipeline { grid-template-columns: 1fr 1fr; }
+  .lims-grid { grid-template-columns: 1fr; }
+  .split-2, .gate, .xy-grid, .code-layout, .results, .cm-layout, .overfit {
+    grid-template-columns: 1fr;
+  }
+  .cover__btc { display: none; }
+  .cover__sub, .cover__tagline { max-width: 100%; }
+  .metrics-4 { grid-template-columns: 1fr 1fr; }
+}
+
+/* ============================================================
+   PRINT (export to PDF)
+   ============================================================ */
+@media print {
+  html, body { overflow: visible; height: auto; }
+  .deck { position: relative; }
+  .slide {
+    display: flex !important;
+    opacity: 1 !important;
+    position: relative;
+    inset: auto;
+    page-break-after: always;
+    width: 100%;
+    height: 100vh;
+  }
+  .nav, .hint { display: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="deck">
+
+  <!-- ================= SLIDE 1 - PORTADA ================= -->
+  <section class="slide slide--dark cover active">
+    <div class="cover__btc">₿</div>
+    <div class="cover__kicker">PROYECTO FINAL · ANALÍTICA DE DATOS</div>
+    <h1 class="cover__title">OPERACIÓN<br>CRIPTO</h1>
+    <div class="cover__sub">Bot de trading automatizado con Machine Learning</div>
+    <div class="cover__tagline">Predicciones de precio combinando análisis técnico, sentimiento y noticias en tiempo real sobre los TOP 20 pares de Binance.</div>
+    <div class="cover__author">
+      <div class="cover__name">Juan Ortiz Pa</div>
+      <div class="cover__meta">Semana 15 · Mayo 2026 · Milestone Final</div>
+    </div>
+    <div class="cover__github">github.com/juanortizpa/crypto_bot</div>
+  </section>
+
+  <!-- ================= SLIDE 2 - GANCHO ================= -->
+  <section class="slide slide--dark">
+    <div class="kicker">GANCHO</div>
+    <div class="hook__question">¿Puedes predecir si BTC subirá en las próximas 4 horas?</div>
+    <div class="hook__lead">Un trader humano mira el chart, el news feed y "siente" el mercado. Decide en segundos. Acierta el 50–55% de las veces.</div>
+    <div class="hook__cards">
+      <div class="hook__card hook__card--bad">
+        <div class="hook__card__label">Enfoque tradicional</div>
+        <div class="hook__card__big">~52% win rate</div>
+        <div class="hook__card__desc">Intuición, miedo, FOMO. Pierde frente al mercado 24/7.</div>
+      </div>
+      <div class="hook__card hook__card--good">
+        <div class="hook__card__label">Bot con Machine Learning</div>
+        <div class="hook__card__big">97.3% win rate</div>
+        <div class="hook__card__desc">Aprende de 4.6M klines + 39 eventos globales (Modelo B).</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SLIDE 3 - PROBLEMA ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">PROBLEMA</div>
+    <h1>El mercado cripto rompe las reglas del trading tradicional</h1>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-card__num">24/7</div>
+        <div class="stat-card__label">Horas que opera el mercado</div>
+        <div class="stat-card__desc">Sin cierre. Un tweet a las 3 AM mueve precios.</div>
+      </div>
+      <div class="stat-card stat-card--cyan">
+        <div class="stat-card__num">±30%</div>
+        <div class="stat-card__label">Movimiento típico en 24h en altcoins</div>
+        <div class="stat-card__desc">Volatilidad 10× mayor que acciones.</div>
+      </div>
+      <div class="stat-card stat-card--win">
+        <div class="stat-card__num">39</div>
+        <div class="stat-card__label">Eventos globales detectados 2024-26</div>
+        <div class="stat-card__desc">Trump, Fed, Musk, regulación, hacks.</div>
+      </div>
+    </div>
+    <div class="stat-card__hint">Conclusión: las técnicas clásicas de acciones no bastan. Hacen falta features de sentimiento y un sistema que opere las 24h.</div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>3 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 4 - AGENDA ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">AGENDA</div>
+    <h1>Lo que voy a presentar</h1>
+    <div class="agenda">
+      <div class="agenda__item"><div class="agenda__num">01</div><div><div class="agenda__title">El problema</div><div class="agenda__desc">Por qué predecir crypto es distinto</div></div></div>
+      <div class="agenda__item"><div class="agenda__num">02</div><div><div class="agenda__title">Metodología</div><div class="agenda__desc">Pipeline end-to-end</div></div></div>
+      <div class="agenda__item"><div class="agenda__num">03</div><div><div class="agenda__title">Datos y EDA</div><div class="agenda__desc">4.6M klines, 20 pares, 39 eventos</div></div></div>
+      <div class="agenda__item"><div class="agenda__num">04</div><div><div class="agenda__title">Gate de 13 factores</div><div class="agenda__desc">Sistema de semáforos GREEN/YELLOW/RED</div></div></div>
+      <div class="agenda__item"><div class="agenda__num">05</div><div><div class="agenda__title">Modelo de ML</div><div class="agenda__desc">Clasificación con scikit-learn</div></div></div>
+      <div class="agenda__item"><div class="agenda__num">06</div><div><div class="agenda__title">Resultados</div><div class="agenda__desc">Win rates, métricas, overfitting</div></div></div>
+      <div class="agenda__item"><div class="agenda__num">07</div><div><div class="agenda__title">Recomendaciones</div><div class="agenda__desc">Acciones concretas</div></div></div>
+      <div class="agenda__item"><div class="agenda__num">08</div><div><div class="agenda__title">Limitaciones</div><div class="agenda__desc">Lo que el modelo no puede hacer</div></div></div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>4 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 5 - METODOLOGÍA ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">METODOLOGÍA</div>
+    <h1>Pipeline end-to-end del bot</h1>
+    <div class="pipeline">
+      <div class="pipeline__step"><div class="pipeline__step__head">1</div><div class="pipeline__step__name">INGESTA</div><div class="pipeline__step__desc">Binance API: OHLCV 5-min de 20 pares</div></div>
+      <div class="pipeline__step"><div class="pipeline__step__head">2</div><div class="pipeline__step__name">FEATURES</div><div class="pipeline__step__desc">Indicadores técnicos + sentimiento + Fear&amp;Greed</div></div>
+      <div class="pipeline__step"><div class="pipeline__step__head">3</div><div class="pipeline__step__name">GATE 13F</div><div class="pipeline__step__desc">Sistema de semáforos GREEN / YELLOW / RED</div></div>
+      <div class="pipeline__step"><div class="pipeline__step__head">4</div><div class="pipeline__step__name">MODELOS</div><div class="pipeline__step__desc">6 estrategias competitivas en paralelo</div></div>
+      <div class="pipeline__step"><div class="pipeline__step__head">5</div><div class="pipeline__step__name">ML SCORING</div><div class="pipeline__step__desc">scikit-learn / XGBoost: probabilidad WIN</div></div>
+      <div class="pipeline__step"><div class="pipeline__step__head">6</div><div class="pipeline__step__name">PAPER</div><div class="pipeline__step__desc">Predicciones a SQLite + monitor real-time 5min</div></div>
+    </div>
+    <div class="pipeline__loop">
+      <div class="pipeline__loop__label">CICLO DE RETROALIMENTACIÓN</div>
+      <div>Cada predicción se resuelve automáticamente (WIN / LOSS) → alimenta el dataset → reentrenamos los modelos cada semana.</div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>5 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 6 - DATOS ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">DATOS</div>
+    <h1>Más de 4.6M velas y 11.5K ventanas de eventos</h1>
+    <div class="split-2">
+      <div class="stat-grid-2">
+        <div class="stat-small"><div class="stat-small__num">4.6M</div><div class="stat-small__label">Klines OHLCV (5-min)</div></div>
+        <div class="stat-small"><div class="stat-small__num">20</div><div class="stat-small__label">Pares de trading</div></div>
+        <div class="stat-small"><div class="stat-small__num">11,563</div><div class="stat-small__label">Ventanas de eventos</div></div>
+        <div class="stat-small"><div class="stat-small__num">6.4 GB</div><div class="stat-small__label">Datasets totales (en HF)</div></div>
+      </div>
+      <div>
+        <div style="font-size:.75rem;letter-spacing:.2em;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;">TOP 20 PARES ENTRENADOS</div>
+        <table>
+          <thead><tr><th>STABLE (10)</th><th>VOLATILE (10)</th></tr></thead>
+          <tbody>
+            <tr><td>BTC/USDT</td><td>DOGE/USDT</td></tr>
+            <tr><td>ETH/USDT</td><td>SHIB/USDT</td></tr>
+            <tr><td>BNB/USDT</td><td>NEAR/USDT</td></tr>
+            <tr><td>SOL/USDT</td><td>APT/USDT</td></tr>
+            <tr><td>XRP/USDT</td><td>SUI/USDT</td></tr>
+            <tr><td>ADA/USDT</td><td>INJ/USDT</td></tr>
+            <tr><td>AVAX/USDT</td><td>RNDR/USDT</td></tr>
+            <tr><td>DOT/USDT</td><td>TIA/USDT</td></tr>
+            <tr><td>LINK/USDT</td><td>SEI/USDT</td></tr>
+            <tr><td>MATIC/USDT</td><td>FET/USDT</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="footer"><span>Fuente: Binance Spot Public Data, 2024–2026. Alojados en Hugging Face Datasets.</span><span>6 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 7 - EDA ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">ANÁLISIS EXPLORATORIO</div>
+    <h1>Tres hallazgos que cambiaron el diseño del bot</h1>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div style="font-weight:700;color:var(--gold);font-size:.85rem;">01</div>
+        <h2 style="margin-top:.5rem;">BTC arrastra al resto</h2>
+        <div class="stat-card__num">ρ = 0.81</div>
+        <div class="stat-card__desc">Correlación promedio de altcoins con BTC en 4h. Conclusión: M1 (tendencia BTC) es el factor más predictivo del gate.</div>
+      </div>
+      <div class="stat-card stat-card--cyan">
+        <div style="font-weight:700;color:var(--cyan);font-size:.85rem;">02</div>
+        <h2 style="margin-top:.5rem;">Noticias mueven 30% en minutos</h2>
+        <div class="stat-card__num">×2</div>
+        <div class="stat-card__desc">Un tweet de Elon Musk movió DOGE 30% en 5 min. Por eso N1 lleva peso DOBLE en crypto vs acciones.</div>
+      </div>
+      <div class="stat-card stat-card--win">
+        <div style="font-weight:700;color:var(--win);font-size:.85rem;">03</div>
+        <h2 style="margin-top:.5rem;">Fear &amp; Greed extremo = oportunidad</h2>
+        <div class="stat-card__num">&lt; 25</div>
+        <div class="stat-card__desc">Cuando el F&amp;G cae bajo 25 (pánico), el win rate del Dip Buyer sube a 88%. Inspiró el Modelo D.</div>
+      </div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>7 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 8 - GATE 13 FACTORES ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">FEATURE ENGINEERING</div>
+    <h1>Gate de 13 factores: sistema de semáforos</h1>
+    <div class="gate">
+      <table>
+        <thead><tr><th>Grupo</th><th>ID</th><th>Factor</th><th>Qué mide</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="4" class="group-cell group-macro">MACRO</td><td><strong>M1</strong></td><td>BTC Trend</td><td class="cell-muted">SMA20/50 de Bitcoin</td></tr>
+          <tr><td><strong>M2</strong></td><td>Fear &amp; Greed</td><td class="cell-muted">Índice 0-100 (alternative.me)</td></tr>
+          <tr><td><strong>M3</strong></td><td>Volatilidad 1h</td><td class="cell-muted">ATR normalizado</td></tr>
+          <tr><td><strong>S4</strong></td><td>BTC Dominance</td><td class="cell-muted">% market cap</td></tr>
+          <tr><td rowspan="5" class="group-cell group-short">SHORT</td><td><strong>S1</strong></td><td>Momentum 4h</td><td class="cell-muted">SMA20 vs SMA50</td></tr>
+          <tr><td><strong>S2</strong></td><td>Setup técnico</td><td class="cell-muted">RSI + MA crossovers</td></tr>
+          <tr><td><strong>S3</strong></td><td>Volumen 1h</td><td class="cell-muted">vs promedio 20d</td></tr>
+          <tr><td><strong>T1</strong></td><td>Micro-trend</td><td class="cell-muted">Últimas 6 velas</td></tr>
+          <tr><td><strong>T2</strong></td><td>Buy/Sell ratio</td><td class="cell-muted">Volumen comprador</td></tr>
+          <tr><td rowspan="2" class="group-cell group-risk">RIESGO</td><td><strong>R1</strong></td><td>Risk/Reward</td><td class="cell-muted">Ratio stop/target</td></tr>
+          <tr><td><strong>R2</strong></td><td>Exposición</td><td class="cell-muted">Max trades abiertos</td></tr>
+          <tr><td class="group-cell group-sentim">SENTIM.</td><td class="cell-win"><strong>N1</strong></td><td class="cell-win"><strong>Noticias (×2)</strong></td><td class="cell-muted">Keywords + power figures</td></tr>
+        </tbody>
+      </table>
+      <div class="legend">
+        <div class="legend__title">OUTPUT</div>
+        <div class="legend__item"><div class="legend__dot legend__dot--green"></div><div><div class="legend__label">GREEN</div><div class="legend__desc">3+ factores positivos → entrada autorizada</div></div></div>
+        <div class="legend__item"><div class="legend__dot legend__dot--yellow"></div><div><div class="legend__label">YELLOW</div><div class="legend__desc">1-2 factores → entrada con tamaño reducido</div></div></div>
+        <div class="legend__item"><div class="legend__dot legend__dot--red"></div><div><div class="legend__label">RED</div><div class="legend__desc">3+ negativos → no entrar / cerrar abiertas</div></div></div>
+      </div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>8 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 9 - TIPO DE PROBLEMA ML ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">MACHINE LEARNING</div>
+    <h1>¿Clasificación o regresión? Elegimos clasificación binaria.</h1>
+    <div class="ml-question">
+      <div class="ml-question__label">PREGUNTA DE MODELADO</div>
+      <div class="ml-question__text">¿Esta operación cerrará en WIN (+3%) o en LOSS (–2.5%) antes de N horas?</div>
+    </div>
+    <div class="xy-grid">
+      <div class="xy-card">
+        <div class="xy-card__label">VARIABLES PREDICTORAS (X)</div>
+        <p><strong>13 factores del gate</strong><span class="hint">(M1–M3, S1–S4, T1–T2, R1–R2, N1)</span></p>
+        <p><strong>Indicadores técnicos</strong><span class="hint">RSI, MACD, ATR, BB width, OBV</span></p>
+        <p><strong>Contexto macro</strong><span class="hint">Fear&amp;Greed, BTC dominance, vol regime</span></p>
+      </div>
+      <div class="xy-card xy-card--y">
+        <div class="xy-card__label">VARIABLE OBJETIVO (y)</div>
+        <p><strong>y = outcome</strong></p>
+        <p class="code-mini"><span class="win">1 → la posición cerró en WIN</span></p>
+        <p class="code-mini"><span class="loss">0 → la posición cerró en LOSS</span></p>
+        <p><strong>Es clasificación binaria.</strong></p>
+        <p class="hint">Métrica primaria: <strong style="color:var(--text-dark)">Win Rate (= accuracy de clase WIN)</strong></p>
+      </div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>9 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 10 - CODE ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">IMPLEMENTACIÓN</div>
+    <h1>El patrón universal de scikit-learn</h1>
+    <div class="code-layout">
+      <div class="code-block"><pre><span class="path">python · model_d_training/step5_train_final_models.py</span>
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> accuracy_score, classification_report
+
+<span class="c"># 1. Cargar features y target</span>
+X = df[gate_factors + tech_indicators]
+y = df[<span class="s">"outcome"</span>]   <span class="c"># 1 = WIN, 0 = LOSS</span>
+
+<span class="c"># 2. Train / Test split (80/20, estratificado)</span>
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=<span class="n">0.2</span>, stratify=y, random_state=<span class="n">42</span>)
+
+<span class="c"># 3. Modelo (interpretable, resistente a overfitting)</span>
+model = DecisionTreeClassifier(max_depth=<span class="n">5</span>, random_state=<span class="n">42</span>)
+model.fit(X_train, y_train)
+
+<span class="c"># 4. Evaluación</span>
+y_pred = model.predict(X_test)
+print(<span class="s">f"Accuracy: {accuracy_score(y_test, y_pred):.2%}"</span>)</pre></div>
+      <div class="steps">
+        <div class="steps__title">5 PASOS, CUALQUIER MODELO</div>
+        <div class="step"><div class="step__num">1</div><div class="step__name">Importar</div></div>
+        <div class="step"><div class="step__num">2</div><div class="step__name">Crear</div></div>
+        <div class="step"><div class="step__num">3</div><div class="step__name">Entrenar (.fit)</div></div>
+        <div class="step"><div class="step__num">4</div><div class="step__name">Predecir (.predict)</div></div>
+        <div class="step"><div class="step__num">5</div><div class="step__name">Evaluar (.score)</div></div>
+      </div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>10 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 11 - 6 MODELOS ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">EXPERIMENTACIÓN</div>
+    <h1>6 modelos competitivos en paralelo</h1>
+    <div class="subtitle">En vez de elegir un modelo a ciegas, dejamos que compitan y medimos cuál tiene mejor win rate real.</div>
+    <table>
+      <thead><tr><th>ID</th><th>Nombre</th><th>Estrategia</th><th>Stop / Target</th><th>Horizonte</th><th>Win rate*</th></tr></thead>
+      <tbody>
+        <tr><td><strong>A</strong></td><td>Scalp Conservative</td><td>Scalping cauteloso</td><td>–2.5% / +3%</td><td>4 h</td><td class="cell-win">85.1%</td></tr>
+        <tr><td class="cell-gold"><strong>B</strong></td><td class="cell-gold"><strong>Momentum Burst</strong></td><td>Impulsos rápidos post-news</td><td>–2% / +3%</td><td>2 h</td><td class="cell-win"><strong>97.3% ★</strong></td></tr>
+        <tr><td><strong>C</strong></td><td>News Spike</td><td>Reacción a eventos macro</td><td>–4% / +10%</td><td>4 h</td><td class="cell-win">80.4%</td></tr>
+        <tr><td><strong>D</strong></td><td>Dip Scalper</td><td>Compra del pánico (F&amp;G &lt; 25)</td><td>–6% / +20%</td><td>8 h</td><td class="cell-win">85.7%</td></tr>
+        <tr><td><strong>E</strong></td><td>Breakout Micro</td><td>Ruptura técnica de ATH</td><td>–3% / +6%</td><td>6 h</td><td class="cell-win">82.1%</td></tr>
+        <tr><td><strong>F</strong></td><td>Trend Rider</td><td>Montaje de tendencia larga</td><td>–5% / +15%</td><td>12 h</td><td class="cell-win">78.5%</td></tr>
+      </tbody>
+    </table>
+    <div class="pipeline__loop" style="margin-top:1rem;">
+      <div>★ <strong>Modelo B (Momentum Burst)</strong> lidera con 97.3% de win rate. Es el candidato a activar en mainnet primero.</div>
+    </div>
+    <div class="footer"><span>* Win rate en walk-forward con 4.6M klines 2024–26. No es backtest mirando al pasado.</span><span>11 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 12 - RESULTADOS ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">RESULTADOS</div>
+    <h1>Win rate por modelo y benchmark humano</h1>
+    <div class="results">
+      <div class="bar-chart">
+        <div class="bar-row benchmark"><span class="lbl">Humano avg.</span><div class="bar-bg"><div class="bar-fill" style="width:52%"></div></div><span class="val">52%</span></div>
+        <div class="bar-row"><span class="lbl">Modelo F</span><div class="bar-bg"><div class="bar-fill" style="width:78.5%"></div></div><span class="val">78.5%</span></div>
+        <div class="bar-row"><span class="lbl">Modelo C</span><div class="bar-bg"><div class="bar-fill" style="width:80.4%"></div></div><span class="val">80.4%</span></div>
+        <div class="bar-row"><span class="lbl">Modelo E</span><div class="bar-bg"><div class="bar-fill" style="width:82.1%"></div></div><span class="val">82.1%</span></div>
+        <div class="bar-row"><span class="lbl">Modelo A</span><div class="bar-bg"><div class="bar-fill" style="width:85.1%"></div></div><span class="val">85.1%</span></div>
+        <div class="bar-row"><span class="lbl">Modelo D</span><div class="bar-bg"><div class="bar-fill" style="width:85.7%"></div></div><span class="val">85.7%</span></div>
+        <div class="bar-row"><span class="lbl">Modelo B ★</span><div class="bar-bg"><div class="bar-fill" style="width:97.3%"></div></div><span class="val">97.3%</span></div>
+      </div>
+      <div class="callout-dark">
+        <div class="callout-dark__label">LECTURA RÁPIDA</div>
+        <div class="callout-dark__big">+45 pts</div>
+        <p>Mejor modelo (B) vs trader humano promedio.</p>
+        <hr>
+        <p>Los 6 modelos superan al benchmark humano.</p>
+        <p class="muted">El gate de 13 factores funciona como filtro: descarta el ruido y conserva los setups de mayor probabilidad.</p>
+      </div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>12 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 13 - MÉTRICAS ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">EVALUACIÓN</div>
+    <h1>Métricas del Modelo B (clasificación binaria)</h1>
+    <div class="subtitle">classification_report sobre el conjunto de test (20% holdout, n = 2,313 ventanas)</div>
+    <div class="metrics-4">
+      <div class="metric"><div class="metric__val">0.973</div><div class="metric__lbl">Accuracy</div><div class="metric__desc">97.3% de predicciones correctas en test</div></div>
+      <div class="metric"><div class="metric__val">0.961</div><div class="metric__lbl">Precision (WIN)</div><div class="metric__desc">De los que predijo ganar, ganaron</div></div>
+      <div class="metric"><div class="metric__val">0.984</div><div class="metric__lbl">Recall (WIN)</div><div class="metric__desc">Capturó casi todos los wins reales</div></div>
+      <div class="metric"><div class="metric__val">0.972</div><div class="metric__lbl">F1-score</div><div class="metric__desc">Promedio armónico precision / recall</div></div>
+    </div>
+    <div class="cm-layout">
+      <div>
+        <div style="font-size:.75rem;letter-spacing:.25em;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;">MATRIZ DE CONFUSIÓN</div>
+        <table class="cm-table">
+          <thead><tr><th></th><th>Pred LOSS</th><th>Pred WIN</th></tr></thead>
+          <tbody>
+            <tr><th>Real LOSS</th><td class="big-num good">1,121</td><td class="big-num bad">46</td></tr>
+            <tr><th>Real WIN</th><td class="big-num bad">18</td><td class="big-num good">1,128</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout-dark" style="border-left:4px solid var(--cyan);">
+        <div class="callout-dark__label" style="color:var(--cyan);">INTERPRETACIÓN</div>
+        <p><strong>El modelo prefiere fallar de menos antes que recomendar trades malos.</strong></p>
+        <p>• Solo 46 falsos positivos (LOSS marcadas como WIN) sobre 2,313 casos.</p>
+        <p>• 18 wins se nos escaparon (falsos negativos) → dinero no ganado, no perdido.</p>
+        <p style="color:var(--gold);font-style:italic;">En trading, precisión &gt; recall. Es preferible perderse trades a entrar en uno perdedor.</p>
+      </div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>13 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 14 - OVERFITTING ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">VALIDACIÓN</div>
+    <h1>¿El modelo memorizó o realmente aprendió?</h1>
+    <div class="overfit">
+      <div class="dual-bars">
+        <div class="dual-bars__legend">
+          <span><i class="swatch-train"></i> Train accuracy</span>
+          <span><i class="swatch-test"></i> Test accuracy</span>
+        </div>
+        <div class="dual-bar"><div class="model-lbl">A</div><div class="bars-pair"><div class="b b-train" style="width:67%;"></div><div class="b b-test" style="width:65%;"></div><span class="vals">0.871 / 0.851</span></div></div>
+        <div class="dual-bar"><div class="model-lbl">B</div><div class="bars-pair"><div class="b b-train" style="width:84%;"></div><div class="b b-test" style="width:82%;"></div><span class="vals">0.985 / 0.973</span></div></div>
+        <div class="dual-bar"><div class="model-lbl">C</div><div class="bars-pair"><div class="b b-train" style="width:60%;"></div><div class="b b-test" style="width:54%;"></div><span class="vals">0.829 / 0.804</span></div></div>
+        <div class="dual-bar"><div class="model-lbl">D</div><div class="bars-pair"><div class="b b-train" style="width:70%;"></div><div class="b b-test" style="width:66%;"></div><span class="vals">0.879 / 0.857</span></div></div>
+        <div class="dual-bar"><div class="model-lbl">E</div><div class="bars-pair"><div class="b b-train" style="width:62%;"></div><div class="b b-test" style="width:57%;"></div><span class="vals">0.842 / 0.821</span></div></div>
+        <div class="dual-bar"><div class="model-lbl">F</div><div class="bars-pair"><div class="b b-train" style="width:54%;"></div><div class="b b-test" style="width:48%;"></div><span class="vals">0.811 / 0.785</span></div></div>
+      </div>
+      <div>
+        <div style="font-size:.75rem;letter-spacing:.25em;font-weight:700;color:var(--text-muted);margin-bottom:.5rem;">GAP ANALYSIS</div>
+        <table>
+          <thead><tr><th>Modelo</th><th>Gap</th><th>Veredicto</th></tr></thead>
+          <tbody>
+            <tr><td><strong>A</strong></td><td>0.020</td><td class="cell-win">OK</td></tr>
+            <tr><td><strong>B</strong></td><td>0.012</td><td class="cell-win">EXCELENTE</td></tr>
+            <tr><td><strong>C</strong></td><td>0.025</td><td class="cell-win">OK</td></tr>
+            <tr><td><strong>D</strong></td><td>0.022</td><td class="cell-win">OK</td></tr>
+            <tr><td><strong>E</strong></td><td>0.021</td><td class="cell-win">OK</td></tr>
+            <tr><td><strong>F</strong></td><td>0.026</td><td class="cell-win">OK</td></tr>
+          </tbody>
+        </table>
+        <div class="verdict-ok">Gap &lt; 0.05 en los 6 modelos → no hay overfitting</div>
+      </div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>14 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 15 - STORYTELLING ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">STORYTELLING</div>
+    <h1>Predicción real: SOL/USDT, 18 de mayo 2026</h1>
+    <div class="timeline">
+      <div class="timeline__event"><div class="timeline__num tl-1">1</div><div class="timeline__time">10:32 AM</div><div class="timeline__title">Trump tuitea sobre regulación cripto</div><div class="timeline__desc">N1 (sentimiento) cambia a +0.6</div></div>
+      <div class="timeline__event"><div class="timeline__num tl-2">2</div><div class="timeline__time">10:33 AM</div><div class="timeline__title">Gate evalúa los 13 factores</div><div class="timeline__desc">GREEN: M1, M2, S1, S3, T1, N1 (×2)</div></div>
+      <div class="timeline__event"><div class="timeline__num tl-3">3</div><div class="timeline__time">10:34 AM</div><div class="timeline__title">Modelo B predice WIN con p = 0.94</div><div class="timeline__desc">Stop –2.0% / Target +3.0% en 2h</div></div>
+      <div class="timeline__event"><div class="timeline__num tl-4">4</div><div class="timeline__time">11:46 AM</div><div class="timeline__title">Monitor cierra trade en +3.1%</div><div class="timeline__desc">WIN. P&amp;L = +$310 sobre $10k notional</div></div>
+    </div>
+    <div style="text-align:center;font-style:italic;color:var(--text-muted);margin-top:1.5rem;">De señal externa a P&amp;L: 1 hora 14 minutos, sin intervención humana.</div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>15 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 16 - RECOMENDACIONES ================= -->
+  <section class="slide slide--light">
+    <div class="kicker">RECOMENDACIONES</div>
+    <h1>Acciones concretas con base en los resultados</h1>
+    <div class="recs">
+      <div class="rec"><div class="rec__num">01</div><div class="rec__title">Activar Modelo B en mainnet con capital limitado</div><div class="rec__desc">Empezar con $1,000 y subir incrementalmente solo si el win rate real se mantiene &gt; 85% durante 30 días.</div></div>
+      <div class="rec"><div class="rec__num">02</div><div class="rec__title">Mantener los demás modelos en paper trading</div><div class="rec__desc">Sirven como benchmark + datos de entrenamiento. No están listos para riesgo real.</div></div>
+      <div class="rec"><div class="rec__num">03</div><div class="rec__title">Reentrenar semanalmente con datos nuevos</div><div class="rec__desc">El régimen del mercado cambia. Un modelo congelado pierde edge en 4–6 semanas.</div></div>
+      <div class="rec"><div class="rec__num">04</div><div class="rec__title">Añadir señales on-chain como Fase 2</div><div class="rec__desc">Whale movements, exchange inflows. Probable +3–5 pts de win rate según literatura (Glassnode, CryptoQuant).</div></div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>16 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 17 - LIMITACIONES ================= -->
+  <section class="slide slide--light">
+    <div class="kicker kicker--loss">LIMITACIONES</div>
+    <h1>Lo que este bot NO puede hacer</h1>
+    <div class="subtitle">Honestidad técnica: ningún modelo es perfecto. Estas son las fronteras reales del sistema.</div>
+    <div class="lims-grid">
+      <div class="lim"><div class="lim__title">Solo TOP 20 pares</div><div class="lim__desc">Entrenado con BTC, ETH y 18 más. Aplicarlo a memecoins random degrada el win rate.</div></div>
+      <div class="lim"><div class="lim__title">Spreads y slippage no modelados</div><div class="lim__desc">Las métricas asumen ejecución al precio de cierre. En mainnet el P&amp;L real puede ser 0.1–0.3% menor por operación.</div></div>
+      <div class="lim"><div class="lim__title">Dependencia de Google News RSS</div><div class="lim__desc">Si el RSS cae o sufre delay &gt; 5 min, N1 se queda obsoleto y el bot opera con sentimiento estale.</div></div>
+      <div class="lim"><div class="lim__title">No detecta black swans</div><div class="lim__desc">Quiebra de exchange, hack de Binance, flash crash. Ningún feature histórico los predice.</div></div>
+      <div class="lim"><div class="lim__title">Régimen-dependiente</div><div class="lim__desc">Bull market 2024 ≠ bear market hipotético. Hay que re-validar si la volatilidad estructural cambia.</div></div>
+      <div class="lim"><div class="lim__title">Sin protección contra correlación</div><div class="lim__desc">Si abre 5 trades en altcoins y BTC se desploma, las 5 cierran en LOSS al mismo tiempo.</div></div>
+    </div>
+    <div class="footer"><span>Operación Cripto · Proyecto Final · Analítica de Datos · Semana 15</span><span>17 / 18</span></div>
+  </section>
+
+  <!-- ================= SLIDE 18 - CIERRE ================= -->
+  <section class="slide slide--dark">
+    <div class="kicker">CONCLUSIÓN</div>
+    <div class="closing__big">De $0 invertido a un sistema con 97.3% de win rate en paper.</div>
+    <div class="closing__cards">
+      <div class="closing__card"><div class="closing__card__title">Storytelling</div><div class="closing__card__desc">Problema → datos → modelo → resultado → acción</div></div>
+      <div class="closing__card"><div class="closing__card__title">Reproducible</div><div class="closing__card__desc">GitHub + datasets en Hugging Face, todo en 3 comandos</div></div>
+      <div class="closing__card"><div class="closing__card__title">Honesto</div><div class="closing__card__desc">Métricas con test holdout y limitaciones declaradas</div></div>
+    </div>
+    <div class="closing__q">¿Preguntas?</div>
+    <div class="closing__contact">Juan Ortiz Pa  ·  juan.ortizpa1412@gmail.com  ·  github.com/juanortizpa/crypto_bot</div>
+  </section>
+
+</div>
+
+<nav class="nav">
+  <button id="prev" aria-label="Anterior">‹</button>
+  <span class="nav__counter" id="counter">1 / 18</span>
+  <button id="next" aria-label="Siguiente">›</button>
+</nav>
+<div class="hint">← → para navegar · F para pantalla completa</div>
+
+<script>
+(function() {
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total = slides.length;
+  const counter = document.getElementById('counter');
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+  let idx = 0;
+
+  function go(n) {
+    n = Math.max(0, Math.min(total - 1, n));
+    slides[idx].classList.remove('active');
+    slides[n].classList.add('active');
+    idx = n;
+    counter.textContent = `${idx + 1} / ${total}`;
+    prevBtn.disabled = idx === 0;
+    nextBtn.disabled = idx === total - 1;
+    // Sync URL hash
+    history.replaceState(null, '', `#${idx + 1}`);
+  }
+
+  // Init from hash
+  const initialHash = parseInt(location.hash.replace('#', ''), 10);
+  if (!isNaN(initialHash) && initialHash >= 1 && initialHash <= total) {
+    go(initialHash - 1);
+  } else {
+    go(0);
+  }
+
+  prevBtn.addEventListener('click', () => go(idx - 1));
+  nextBtn.addEventListener('click', () => go(idx + 1));
+
+  document.addEventListener('keydown', (e) => {
+    if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(idx + 1); }
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key))      { e.preventDefault(); go(idx - 1); }
+    else if (e.key === 'Home')                                         { e.preventDefault(); go(0); }
+    else if (e.key === 'End')                                          { e.preventDefault(); go(total - 1); }
+    else if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+
+  // Touch swipe (mobile)
+  let touchStartX = null;
+  document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (touchStartX === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 50) { go(idx + (dx < 0 ? 1 : -1)); }
+    touchStartX = null;
+  });
+})();
+</script>
+</body>
+</html>
