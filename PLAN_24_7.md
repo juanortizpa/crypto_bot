@@ -8,6 +8,34 @@ usa y qué revisar tú.
 
 ---
 
+## 0) Instalación en un portátil virgen (Windows)
+
+1. Instalar **Python 3.11** (python.org, marcar "Add Python to PATH") y **Git**.
+2. Clonar y preparar el entorno:
+   ```powershell
+   git clone https://github.com/juanortizpa/crypto_bot.git
+   cd crypto_bot
+   python -m venv .venv
+   Set-ExecutionPolicy -Scope Process Bypass
+   .\.venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   ```
+3. Crear `.env` con las keys de **testnet.binance.vision**:
+   `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_MODE=testnet`, `CRYPTO_PORTFOLIO=1000`.
+4. Datos (6.4 GB, ver README §Datasets en Hugging Face) y puesta al día:
+   ```powershell
+   python scripts/download_datasets_from_hf.py
+   python bot_crypto.py maintain data
+   ```
+5. **Modelos `.pkl`** (no viajan ni en GitHub ni en el dataset): copiar
+   `model_d_training/results/*.pkl` desde el PC actual por USB (recomendado —
+   conserva los modelos/thresholds validados). Opcional: copiar también
+   `state/crypto_predictions.db` y `state/ml_decisions.db` para conservar el
+   historial. Sin PC viejo: reentrenar una vez con el pipeline de
+   GUIA_DIARIA (`features → train_grid → train_xgb → train_hybrid → compare`)
+   y revisar thresholds.
+6. Requisito de disco: ~15 GB libres.
+
 ## 1) Arranque (una sola vez)
 
 ```powershell
