@@ -227,7 +227,6 @@ def retrain_ensemble() -> str:
         "model_d_training.train_grid",
         "model_d_training.train_xgb",
         "model_d_training.train_hybrid",
-        "model_d_training.compare",
     ]
     for step in steps:
         if not _run_module(step, TRAIN_TIMEOUT):
@@ -235,6 +234,20 @@ def retrain_ensemble() -> str:
             _restore_results(backup_dir)
             _reload_inference()
             return "FAILED_RESTORED"
+
+    # Tercer votante del ensemble (RF), via train_full sobre features_extended.
+    # No fatal: train_full tiene su propio quality gate (TRAIN_MIN_*) y si las
+    # metricas no llegan no reemplaza nada — sin RF el ensemble vota con 2.
+    if not _run_module("model_d_training.train_full", TRAIN_TIMEOUT,
+                       extra_args=["--models", "rf"]):
+        log("WARN", "maintenance: trainer RF no paso (no fatal) — "
+                    "el ensemble seguira votando sin RF")
+
+    if not _run_module("model_d_training.compare", TRAIN_TIMEOUT):
+        log("WARN", "maintenance: ensemble retrain fallo en compare — restaurando modelos previos")
+        _restore_results(backup_dir)
+        _reload_inference()
+        return "FAILED_RESTORED"
 
     # Quality gate sobre la validacion out-of-sample
     deployable = False
