@@ -51,6 +51,74 @@ def main():
         from bot.runner import run
         run(max_hours=hours)
 
+    elif cmd == "forever":
+        # Modo 24/7: encadena sesiones con mantenimiento programado.
+        # Ver bot/forever.py y PLAN_24_7.md
+        days = None
+        dry = None
+        for i, a in enumerate(sys.argv):
+            if a == "--days" and i + 1 < len(sys.argv):
+                days = float(sys.argv[i + 1])
+            elif a == "--dry-run":
+                dry = True
+            elif a == "--live":
+                dry = False
+        from bot.forever import run_forever
+        run_forever(days=days, dry_run=dry)
+
+    elif cmd == "health":
+        # Chequeo rapido de salud para vigilancia externa (o por SSH/anydesk)
+        from bot.heartbeat import status as hb_status
+        import shutil as _shutil
+        hb = hb_status()
+        fresh = " (STALE ⚠️)" if hb.get("stale") else ""
+        print(f"\n  Heartbeat:   {hb.get('phase')} hace {hb.get('age_minutes')} min{fresh}")
+        try:
+            import sqlite3 as _sq
+            con = _sq.connect(os.path.join(os.path.dirname(__file__), "state", "crypto_predictions.db"))
+            pend = con.execute("SELECT COUNT(*) FROM predictions WHERE outcome='PENDING'").fetchone()[0]
+            last = con.execute("SELECT MAX(outcome_date) FROM predictions "
+                               "WHERE outcome IN ('WIN','LOSS','BE')").fetchone()[0]
+            con.close()
+            print(f"  Pendientes:  {pend}")
+            print(f"  Ultimo cierre: {last}")
+        except Exception as e:
+            print(f"  DB:          error ({e})")
+        free_gb = _shutil.disk_usage(os.path.dirname(__file__)).free / (1024**3)
+        print(f"  Disco libre: {free_gb:.1f} GB")
+        try:
+            from bot.risk_guard import is_tripped, trip_reason
+            print(f"  Risk guard:  {'TRIPPED — ' + str(trip_reason()) if is_tripped() else 'OK'}")
+        except Exception:
+            pass
+        try:
+            from bot.circuit_breaker import check_circuit_breaker
+            blocked, reason = check_circuit_breaker()
+            print(f"  Circ.breaker: {'BLOCKED — ' + reason if blocked else 'OK'}")
+        except Exception:
+            pass
+        try:
+            from bot.maintenance import data_freshness
+            print(f"  Datos:       {data_freshness()}")
+        except Exception:
+            pass
+        print()
+
+    elif cmd == "maintain":
+        from bot.maintenance import main as maintain_main
+        maintain_main(sys.argv[2] if len(sys.argv) >= 3 else "")
+
+    elif cmd == "daily-report":
+        from bot.daily_report import generate_daily_report
+        day = sys.argv[2] if len(sys.argv) >= 3 else None
+        path = generate_daily_report(day)
+        print(f"\n  Reporte escrito: {path}")
+        print(f"  Resumen acumulado: reports/summary.csv\n")
+
+    elif cmd == "readiness":
+        from bot.daily_report import readiness_report
+        readiness_report()
+
     elif cmd == "risk":
         from bot.risk_guard import report as risk_report
         print(risk_report())
@@ -435,6 +503,13 @@ def _help():
               CRYPTO TRADING BOT -- CLI
   ============================================================
    run [--hours N] [--dry-run]   Loop principal (max 12h real / 17h dry-run)
+   forever [--days N] [--dry-run|--live]
+                                 Modo 24/7: sesiones encadenadas + mantenimiento
+                                 automatico (datos, retrains, reportes). Ver PLAN_24_7.md
+   health                        Salud del bot (heartbeat, pendientes, disco, guards)
+   maintain <tarea>              Mantenimiento manual: backup|data|models|ensemble
+   daily-report [YYYY-MM-DD]     Genera reporte diario en reports/
+   readiness                     Veredicto: criterios para pasar a mainnet
    risk                          Estado del risk guard
    risk-reset [--force]          Resetea risk guard
    events                        Eventos macro proximos

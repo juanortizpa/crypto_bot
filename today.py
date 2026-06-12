@@ -12,7 +12,8 @@ rows = con.execute("""
     ORDER BY id
 """, (today,)).fetchall()
 
-CAPITAL = 1000.0
+CAPITAL = float(os.environ.get("CRYPTO_PORTFOLIO",
+                os.environ.get("CRYPTO_INITIAL_CAPITAL", "1000")))
 POS = 0.05
 total_usd = 0.0
 wins = losses = 0
@@ -30,6 +31,9 @@ for r in rows:
     print(f"  {r['id']:>3} {r['symbol']:<12} {r['outcome']:<5} {pnl:>+7.3f}%  ${usd:>+6.2f}  {h:>6}")
 
 print("  " + "-" * 50)
-print(f"  Wins: {wins}  Losses: {losses}  WR: {100*wins/(wins+losses):.1f}%")
+if wins + losses > 0:
+    print(f"  Wins: {wins}  Losses: {losses}  WR: {100*wins/(wins+losses):.1f}%")
+else:
+    print("  Sin trades cerrados hoy.")
 print(f"  P&L neto hoy: ${total_usd:+.2f}")
 con.close()

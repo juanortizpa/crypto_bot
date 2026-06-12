@@ -68,6 +68,8 @@ def collect_training_data() -> list:
     """
     con = _conn()
 
+    # Solo trades con contabilidad honesta (post 2026-06-10); los labels
+    # anteriores estan inflados (ver AUDITORIA_2026-06-10.md).
     closed = con.execute("""
         SELECT p.*,
                (SELECT COUNT(*) FROM trade_snapshots ts
@@ -76,7 +78,8 @@ def collect_training_data() -> list:
         WHERE p.outcome IN ('WIN','LOSS')
           AND p.pnl_pct IS NOT NULL
           AND p.max_hours IS NOT NULL
-    """).fetchall()
+          AND p.outcome_date >= ?
+    """, (ACCOUNTING_FIX_DATE,)).fetchall()
 
     rows = []
     for pred in closed:

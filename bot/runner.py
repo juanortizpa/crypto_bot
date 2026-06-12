@@ -43,6 +43,16 @@ MONITOR_INTERVAL_SEC = int(os.environ.get("CRYPTO_MONITOR_INTERVAL_SEC", "60")) 
 DRY_RUN = os.environ.get("CRYPTO_DRY_RUN", "true").lower() in ("1", "true", "yes")
 
 
+def _carry_over_enabled() -> bool:
+    """
+    Modo 24/7 (forever): al terminar la sesion NO se fuerza el cierre de
+    posiciones — quedan PENDING y la siguiente sesion las retoma (el monitor
+    lee todas las PENDING de la DB, y check_outcomes() reconstruye con velas
+    de 5m cualquier stop/target tocado durante el hueco entre sesiones).
+    """
+    return os.environ.get("CRYPTO_CARRY_OVER", "").lower() in ("1", "true", "yes")
+
+
 def _get_open_predictions(con):
     """Predicciones con outcome PENDING (trades activos)."""
     return con.execute(
@@ -387,16 +397,19 @@ def _run_scan_cycle(session_start_iso: str = None):
                         f"  {sym}: [{chosen_model}] ML={ml_decision} informativo "
                         f"(no veta momentum/breakout)")
 
-                # Comprobar que el trade cabe en lo que queda de sesion
+                # Comprobar que el trade cabe en lo que queda de sesion.
+                # En modo carry-over (24/7) los trades sobreviven el fin de
+                # sesion, asi que no aplica este limite.
                 model_max_h = MODELS[chosen_model].get("max_hours", 4)
-                if sm is not None and not sm.can_fit_trade(model_max_h):
-                    log("INFO",
-                        f"  {sym}: trade ({model_max_h}h) excede tiempo restante de sesion")
-                    continue
-                # Minimo 30 minutos restantes para abrir cualquier trade
-                if sm is not None and sm.remaining_hours() < 0.5:
-                    log("INFO", f"  {sym}: menos de 30min restantes — no abrir nuevos trades")
-                    continue
+                if not _carry_over_enabled():
+                    if sm is not None and not sm.can_fit_trade(model_max_h):
+                        log("INFO",
+                            f"  {sym}: trade ({model_max_h}h) excede tiempo restante de sesion")
+                        continue
+                    # Minimo 30 minutos restantes para abrir cualquier trade
+                    if sm is not None and sm.remaining_hours() < 0.5:
+                        log("INFO", f"  {sym}: menos de 30min restantes — no abrir nuevos trades")
+                        continue
 
                 pid = predict(sym, verbose=False, model=chosen_model,
                               stop_price=chosen_stop, target_price=chosen_target,
@@ -539,14 +552,31 @@ def run(max_hours: float = None, dry_run: bool = None):
     session_start_iso = datetime.now().isoformat()
     last_scan_at = 0.0
 
+    carry_over = _carry_over_enabled()
+
     while sm.should_continue():
         now_ts = time.time()
         st = sm.state()
         log("INFO", "  [LOOP] state=%s elapsed=%.2fh remaining=%.2fh" % (
             st, sm.elapsed_hours(), sm.remaining_hours()))
 
-        # FORCE_CLOSE -> cerrar todo y salir
+        # Heartbeat para vigilancia externa (health / watchdog 24-7)
+        try:
+            from bot.heartbeat import beat
+            beat("SESSION_" + st,
+                 elapsed_h=round(sm.elapsed_hours(), 2),
+                 remaining_h=round(sm.remaining_hours(), 2),
+                 dry_run=bool(dry_run))
+        except Exception:
+            pass
+
+        # FORCE_CLOSE -> cerrar todo y salir (o entregar a la proxima sesion)
         if sm.must_force_close():
+            if carry_over:
+                log("INFO", "  Fin de sesion (carry-over): las posiciones "
+                            "abiertas quedan PENDING para la proxima sesion")
+                _monitor_open_positions(force_close_all=False)
+                break
             log("WARN", "  Sesion en FORCE_CLOSE — cerrando todas las posiciones")
             _monitor_open_positions(force_close_all=True)
             break
