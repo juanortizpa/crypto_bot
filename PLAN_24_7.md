@@ -10,6 +10,9 @@ usa y qué revisar tú.
 
 ## 0) Instalación en un portátil virgen (Windows)
 
+> Requisitos: **~15 GB libres** en disco y conexión estable. Tiempo total
+> estimado: 2-4 h, casi todo descargas y entrenamiento desatendidos.
+
 1. Instalar **Python 3.11** (python.org, marcar "Add Python to PATH") y **Git**.
 2. Clonar y preparar el entorno:
    ```powershell
@@ -20,28 +23,56 @@ usa y qué revisar tú.
    .\.venv\Scripts\Activate.ps1
    pip install -r requirements.txt
    ```
-3. Crear `.env` con las keys de **testnet.binance.vision**:
-   `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_MODE=testnet`, `CRYPTO_PORTFOLIO=1000`.
-4. Datos (6.4 GB, ver README §Datasets en Hugging Face) y puesta al día:
-   ```powershell
-   python scripts/download_datasets_from_hf.py
-   python bot_crypto.py maintain data
+3. Crear el archivo `.env` en la raíz del proyecto con keys generadas en
+   **testnet.binance.vision** (las de la cuenta normal de Binance no sirven):
+   ```ini
+   BINANCE_API_KEY=tu_key_testnet
+   BINANCE_API_SECRET=tu_secret_testnet
+   BINANCE_MODE=testnet
+   CRYPTO_PORTFOLIO=1000
    ```
-5. **Modelos `.pkl`** (no viajan ni en GitHub ni en el dataset): copiar
-   `model_d_training/results/*.pkl` desde el PC actual por USB (recomendado —
-   conserva los modelos/thresholds validados). Opcional: copiar también
-   `state/crypto_predictions.db` y `state/ml_decisions.db` para conservar el
-   historial. Sin PC viejo: reentrenar una vez con el pipeline de
-   GUIA_DIARIA (`features → train_grid → train_xgb → train_hybrid → compare`)
-   y revisar thresholds.
-6. Requisito de disco: ~15 GB libres.
+4. Datos: bajar la base histórica (6.4 GB, ver README §Datasets en Hugging
+   Face) y **continuar la descarga hasta hoy** — el dataset de HF llega solo
+   hasta su fecha de corte:
+   ```powershell
+   python scripts/download_datasets_from_hf.py   # histórico 2024 → corte del dataset
+   python bot_crypto.py maintain data            # continúa desde el corte hasta hoy
+   ```
+   `maintain data` es reanudable: detecta el último timestamp en cada DB y
+   baja solo lo que falta (klines 5m de los 20 pares + 1m/funding/OI/macro
+   de `data_extended.db`). Si se corta la conexión, relánzalo y sigue donde
+   quedó. Equivale a correr `python -m model_d_training.download_data` y
+   `python -m model_d_training.download_extended`. Durante el mes, `forever`
+   repite este refresco a diario en automático.
+5. **Entrenar el ensemble ML (Modelo D)** — los `.pkl` entrenados no viajan
+   en GitHub: se generan en el propio portátil a partir de los datos del
+   paso 4. Es una sola vez, ~1-3 h de CPU (déjalo corriendo):
+   ```powershell
+   python -m model_d_training.features        # features + labels desde las velas
+   python -m model_d_training.train_grid      # Trainer A (grid)
+   python -m model_d_training.train_xgb       # Trainer B (XGBoost)
+   python -m model_d_training.train_hybrid    # Trainer C (híbrido)
+   python -m model_d_training.compare         # validación OOS y veredicto
+   ```
+   Revisa la salida de `compare`: el objetivo es WR > 55% y PF > 1.5
+   out-of-sample (GUIA_DIARIA §3B). Si sale `NO DEPLOYABLE` la prueba puede
+   arrancar igual — el ensemble solo filtra las entradas del modelo D y el
+   resto de modelos opera con el gate + meta-modelo — pero anótalo en tu
+   registro. Este paso regenera los thresholds de
+   `model_d_training/results/*_best.json` (sobrescribe los del repo).
+6. **meta_model y exit_model**: no hay que hacer nada — arrancan en modo
+   neutro (P(WIN)=0.5) y `forever` los entrena automáticamente cuando el
+   propio mes acumule los mínimos (80 trades / 100 snapshots post-fix).
+7. **Historial**: las DBs de `state/` (predicciones, decisiones ML) se crean
+   solas en el primer arranque. El mes empieza con historial limpio — es lo
+   deseable para que las métricas midan solo esta prueba.
 
 ## 1) Arranque (una sola vez)
 
 ```powershell
 cd crypto_bot
 .\.venv\Scripts\Activate.ps1
-python smoke_test.py --network        # todo debe dar OK
+python smoke_test.py --network        # debe dar 18/18 OK (o más)
 python bot_crypto.py status           # conexión Binance OK
 python bot_crypto.py risk             # guard NO tripped
 .\start_24_7.ps1                      # dry-run paper, 31 días
@@ -57,7 +88,7 @@ activa el venv y relanza el proceso si el intérprete muere. Dentro,
 - [ ] Windows Update en pausa / horas activas configuradas (un reboot
       automático mata el proceso; al relanzar, las posiciones PENDING se
       retoman y `check_outcomes` reconstruye el hueco con velas de 5m).
-- [ ] ~5 GB libres en disco (datasets crecen con el refresco diario).
+- [ ] ≥15 GB libres en disco (los datasets crecen con el refresco diario).
 - [ ] Ningún editor con las `.db` de `state/` abiertas.
 - [ ] Antivirus: excluir la carpeta del proyecto (los scans bloquean SQLite).
 
