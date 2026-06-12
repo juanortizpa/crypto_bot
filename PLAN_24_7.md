@@ -27,14 +27,29 @@ usa y qué revisar tú.
    python scripts/download_datasets_from_hf.py
    python bot_crypto.py maintain data
    ```
-5. **Modelos `.pkl`** (no viajan ni en GitHub ni en el dataset): copiar
-   `model_d_training/results/*.pkl` desde el PC actual por USB (recomendado —
-   conserva los modelos/thresholds validados). Opcional: copiar también
-   `state/crypto_predictions.db` y `state/ml_decisions.db` para conservar el
-   historial. Sin PC viejo: reentrenar una vez con el pipeline de
-   GUIA_DIARIA (`features → train_grid → train_xgb → train_hybrid → compare`)
-   y revisar thresholds.
-6. Requisito de disco: ~15 GB libres.
+5. **Entrenar el ensemble ML (Modelo D)** — los `.pkl` entrenados no viajan
+   en GitHub: se generan en el propio portátil a partir de los datos del
+   paso 4. Es una sola vez, ~1-3 h de CPU (déjalo corriendo):
+   ```powershell
+   python -m model_d_training.features        # features + labels desde las velas
+   python -m model_d_training.train_grid      # Trainer A (grid)
+   python -m model_d_training.train_xgb       # Trainer B (XGBoost)
+   python -m model_d_training.train_hybrid    # Trainer C (híbrido)
+   python -m model_d_training.compare         # validación OOS y veredicto
+   ```
+   Revisa la salida de `compare`: el objetivo es WR > 55% y PF > 1.5
+   out-of-sample (GUIA_DIARIA §3B). Si sale `NO DEPLOYABLE` la prueba puede
+   arrancar igual — el ensemble solo filtra las entradas del modelo D y el
+   resto de modelos opera con el gate + meta-modelo — pero anótalo en tu
+   registro. Este paso regenera los thresholds de
+   `model_d_training/results/*_best.json` (sobrescribe los del repo).
+6. **meta_model y exit_model**: no hay que hacer nada — arrancan en modo
+   neutro (P(WIN)=0.5) y `forever` los entrena automáticamente cuando el
+   propio mes acumule los mínimos (80 trades / 100 snapshots post-fix).
+7. **Historial**: las DBs de `state/` (predicciones, decisiones ML) se crean
+   solas en el primer arranque. El mes empieza con historial limpio — es lo
+   deseable para que las métricas midan solo esta prueba.
+8. Requisito de disco: ~15 GB libres.
 
 ## 1) Arranque (una sola vez)
 
