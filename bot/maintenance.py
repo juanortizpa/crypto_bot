@@ -27,7 +27,7 @@ import glob
 import shutil
 import sqlite3
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -127,11 +127,15 @@ def data_freshness() -> dict:
             val = con.execute(query).fetchone()[0]
             con.close()
             if val is not None:
+                # Comparar SIEMPRE en UTC: los timestamps de las DBs son UTC
+                # y datetime.now() local daba edades negativas (ej. UTC-5).
                 if kind == "ms":
-                    last = datetime.fromtimestamp(int(val) / 1000)
+                    last = datetime.fromtimestamp(int(val) / 1000, tz=timezone.utc)
                 else:
-                    last = datetime.fromisoformat(str(val).replace("Z", "+00:00")).replace(tzinfo=None)
-                age_h = round((datetime.now() - last).total_seconds() / 3600, 1)
+                    last = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                age_h = round((datetime.now(timezone.utc) - last).total_seconds() / 3600, 1)
         except Exception:
             pass
         out[fname] = age_h
