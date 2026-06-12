@@ -104,6 +104,14 @@ def _load_model(filename, json_basename):
             pass
 
     feature_cols = data.get("feature_cols") or meta.get("feature_cols") or []
+    # Un modelo sin features es un artefacto guardado "solo para diagnostico"
+    # (descartado por el quality gate del entrenamiento). No puede predecir:
+    # ignorarlo para que no aparezca como cargado en los logs.
+    if not feature_cols:
+        log("WARN", f"ml_inference: {filename} sin feature_cols "
+                    f"(descartado en entrenamiento) — ignorado")
+        _models_cache[filename] = None
+        return None
     # El JSON tiene prioridad sobre el .pkl para el threshold, para que el
     # usuario pueda ajustarlo manualmente editando solo xgb_best.json sin
     # re-entrenar el modelo entero.
