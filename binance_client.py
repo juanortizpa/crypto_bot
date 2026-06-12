@@ -28,7 +28,9 @@ load_dotenv(_ENV_PATH)
 
 ENV = {
     "BINANCE_API_KEY":    os.getenv("BINANCE_API_KEY", ""),
-    "BINANCE_SECRET_KEY": os.getenv("BINANCE_SECRET_KEY", ""),
+    # La documentacion usa BINANCE_API_SECRET; versiones anteriores del .env
+    # usaban BINANCE_SECRET_KEY. Aceptar ambos nombres.
+    "BINANCE_SECRET_KEY": os.getenv("BINANCE_API_SECRET", "") or os.getenv("BINANCE_SECRET_KEY", ""),
     "BINANCE_MODE":       os.getenv("BINANCE_MODE", "testnet"),
     "AUTO_EXECUTE":       os.getenv("AUTO_EXECUTE", "False").lower() == "true",
 }
@@ -54,16 +56,36 @@ def _sign(params: dict) -> str:
     return signature
 
 
-def _request(method, path, params=None, signed=False, force_live=False):
+# Offset reloj local vs servidor de Binance. El reloj de un portatil se
+# desvia con los dias; si pasa de 1s, los endpoints firmados devuelven
+# error -1021. Calculamos el offset una vez y firmamos con la hora del
+# servidor; si aun asi aparece -1021 (deriva posterior), se recalcula y
+# se reintenta una vez.
+_TIME_OFFSET_MS = None
+
+
+def _server_time_offset() -> int:
+    global _TIME_OFFSET_MS
+    if _TIME_OFFSET_MS is None:
+        try:
+            data = _request("GET", "/api/v3/time")
+            _TIME_OFFSET_MS = int(data["serverTime"]) - int(time.time() * 1000)
+        except Exception:
+            _TIME_OFFSET_MS = 0
+    return _TIME_OFFSET_MS
+
+
+def _request(method, path, params=None, signed=False, force_live=False, _retry=True):
     """
     Hace una request a la API de Binance.
-    signed=True agrega timestamp y firma HMAC.
+    signed=True agrega timestamp (corregido por offset del servidor) y firma HMAC.
     force_live=True usa la API live (para datos publicos aunque estemos en testnet).
     """
-    params = params or {}
+    params = dict(params or {})
 
     if signed:
-        params["timestamp"] = int(time.time() * 1000)
+        params["timestamp"] = int(time.time() * 1000) + _server_time_offset()
+        params.setdefault("recvWindow", 10000)
         params["signature"] = _sign(params)
 
     base = LIVE_URL if force_live else _base_url()
@@ -82,9 +104,19 @@ def _request(method, path, params=None, signed=False, force_live=False):
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode() if e.fp else ""
-        return {"error": f"HTTP {e.code}", "msg": body}
+        result = {"error": f"HTTP {e.code}", "msg": body}
     except Exception as e:
         return {"error": str(e)}
+
+    # Reloj desviado de nuevo (-1021): recalcular offset y reintentar una vez
+    if signed and _retry and "-1021" in str(result.get("msg", "")):
+        global _TIME_OFFSET_MS
+        _TIME_OFFSET_MS = None
+        clean = {k: v for k, v in params.items()
+                 if k not in ("timestamp", "signature", "recvWindow")}
+        return _request(method, path, clean, signed=True,
+                        force_live=force_live, _retry=False)
+    return result
 
 
 # ── Endpoints publicos (no requieren API key) ────────────────────────
