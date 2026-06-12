@@ -22,11 +22,19 @@ usa y qué revisar tú.
    ```
 3. Crear `.env` con las keys de **testnet.binance.vision**:
    `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_MODE=testnet`, `CRYPTO_PORTFOLIO=1000`.
-4. Datos (6.4 GB, ver README §Datasets en Hugging Face) y puesta al día:
+4. Datos: bajar la base histórica (6.4 GB, ver README §Datasets en Hugging
+   Face) y **continuar la descarga hasta hoy** — el dataset de HF llega solo
+   hasta su fecha de corte:
    ```powershell
-   python scripts/download_datasets_from_hf.py
-   python bot_crypto.py maintain data
+   python scripts/download_datasets_from_hf.py   # histórico 2024 → corte del dataset
+   python bot_crypto.py maintain data            # continúa desde el corte hasta hoy
    ```
+   `maintain data` es reanudable: detecta el último timestamp en cada DB y
+   baja solo lo que falta (klines 5m de los 20 pares + 1m/funding/OI/macro
+   de `data_extended.db`). Si se corta la conexión, relánzalo y sigue donde
+   quedó. Equivale a correr `python -m model_d_training.download_data` y
+   `python -m model_d_training.download_extended`. Durante el mes, `forever`
+   repite este refresco a diario en automático.
 5. **Entrenar el ensemble ML (Modelo D)** — los `.pkl` entrenados no viajan
    en GitHub: se generan en el propio portátil a partir de los datos del
    paso 4. Es una sola vez, ~1-3 h de CPU (déjalo corriendo):
