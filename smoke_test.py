@@ -116,6 +116,48 @@ def t_trade_monitor_hard_levels():
     assert "STOP_HIT_HARD" in src and "TARGET_HIT" in src, \
         "record_snapshot debe aplicar stop/target duros sobre las reglas"
 
+# ── Checks del modo 24/7 (forever) ───────────────────────────────────────
+def t_forever_imports():
+    import bot.heartbeat
+    import bot.maintenance
+    import bot.daily_report
+    import bot.forever
+
+def t_heartbeat_roundtrip():
+    from bot.heartbeat import beat, status
+    beat("SMOKE_TEST", foo=1)
+    hb = status()
+    assert hb["phase"] == "SMOKE_TEST" and not hb["stale"], hb
+
+def t_runner_carry_over():
+    import inspect, os
+    import bot.runner as runner
+    src = inspect.getsource(runner.run)
+    assert "carry_over" in src, "runner.run debe soportar carry-over"
+    os.environ["CRYPTO_CARRY_OVER"] = "true"
+    assert runner._carry_over_enabled()
+    os.environ["CRYPTO_CARRY_OVER"] = "false"
+    assert not runner._carry_over_enabled()
+
+def t_training_data_post_fix():
+    """meta/exit model solo deben entrenar con trades post-fix de contabilidad."""
+    import inspect
+    from bot import meta_model, exit_model
+    assert "ACCOUNTING_FIX_DATE" in inspect.getsource(meta_model.collect_meta_training_data)
+    assert "ACCOUNTING_FIX_DATE" in inspect.getsource(exit_model.collect_training_data)
+
+def t_logger_rotation():
+    from bot import logger
+    assert hasattr(logger, "_rotate_if_needed") and logger.MAX_BYTES > 0
+
+def t_ensemble_quality_gate():
+    import inspect
+    from bot import maintenance
+    src = inspect.getsource(maintenance.retrain_ensemble)
+    assert "deployable" in src and "_restore_results" in src, \
+        "retrain_ensemble debe tener quality gate con restore"
+
+
 # ── Network checks (opcionales) ──────────────────────────────────────────
 def t_short_signal_live():
     from bot.short_signal import bearish_score
@@ -148,6 +190,12 @@ if __name__ == "__main__":
     check("runner: monitor limpia cache", t_runner_monitor_cache)
     check("runner: cierres fee-aware", t_runner_fee_aware)
     check("trade_monitor: stop/target duros", t_trade_monitor_hard_levels)
+    check("24/7: imports (forever/maintenance/report)", t_forever_imports)
+    check("24/7: heartbeat escribe y lee", t_heartbeat_roundtrip)
+    check("24/7: runner soporta carry-over", t_runner_carry_over)
+    check("24/7: retrain solo con trades post-fix", t_training_data_post_fix)
+    check("24/7: logger con rotacion", t_logger_rotation)
+    check("24/7: quality gate del ensemble", t_ensemble_quality_gate)
     if network:
         check("short_signal en vivo (BTCUSDT)", t_short_signal_live)
         check("_path_outcome en vivo (BTCUSDT)", t_path_outcome_live)

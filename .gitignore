@@ -138,6 +138,12 @@ presentacion/_build/slide-*.jpg
 state/reversal_watchlist.json
 state/write_test.txt
 state/risk_guard.json
+state/heartbeat.json
+state/forever_state.json
+state/backups/
+
+# -------- Reportes generados por la prueba 24/7 --------
+reports/
 
 # Backups de BD con sufijo de fecha (*.bak no los atrapa)
 *.bak_*

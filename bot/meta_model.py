@@ -242,12 +242,16 @@ def collect_meta_training_data() -> list:
     Retorna lista de dicts: [{"features": {...}, "label": 0|1, "pred_id": int, "model": str}, ...]
     """
     con = _conn()
+    # Solo trades cerrados con la contabilidad honesta (post 2026-06-10).
+    # Los anteriores tienen labels WIN inflados y contaminarian el modelo
+    # (ver AUDITORIA_2026-06-10.md).
     closed = con.execute("""
         SELECT * FROM predictions
         WHERE outcome IN ('WIN', 'LOSS')
           AND factors_json IS NOT NULL
           AND model IS NOT NULL
-    """).fetchall()
+          AND outcome_date >= ?
+    """, (ACCOUNTING_FIX_DATE,)).fetchall()
     con.close()
 
     rows = []

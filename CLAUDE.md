@@ -273,8 +273,26 @@ GROUP BY model ORDER BY wr_pct DESC;
 4. Monitorear continuamente las primeras 2 semanas
 5. Aumentar posición gradualmente si win rate se mantiene
 
+## 🔁 Prueba 24/7 (un mes)
+
+Para la prueba continua de un mes en el portátil NO se usa `run` a mano:
+
+```bash
+.\start_24_7.ps1          # Windows: watchdog + anti-suspensión + venv
+# o directamente:
+python bot_crypto.py forever --days 30 --dry-run
+```
+
+`forever` encadena sesiones de 8h con carry-over de posiciones, resuelve
+outcomes y genera reporte diario (`reports/summary.csv`), hace backup de DBs,
+refresca datos (klines + macro) a diario, reentrena meta/exit model cuando hay
+datos suficientes y el ensemble D cada 14 días con quality gate OOS.
+Vigilancia: `python bot_crypto.py health` · veredicto: `python bot_crypto.py readiness`.
+Detalles completos en [PLAN_24_7.md](PLAN_24_7.md).
+
 ## 📚 Referencias Internas
 
+- [PLAN_24_7.md](PLAN_24_7.md) - Plan y operación de la prueba 24/7 de un mes
 - [README.md](README.md) - Documentación para usuarios
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Diagrama técnico completo
 - [FUENTES_DE_DATOS.md](FUENTES_DE_DATOS.md) - De dónde vienen los datos
