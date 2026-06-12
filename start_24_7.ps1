@@ -1,4 +1,8 @@
-# start_24_7.ps1 — Lanzador 24/7 con watchdog para Windows (portatil).
+# start_24_7.ps1 - Lanzador 24/7 con watchdog para Windows (portatil).
+#
+# IMPORTANTE: archivo 100% ASCII (sin acentos ni guiones largos) porque
+# Windows PowerShell 5.1 lee los .ps1 sin BOM como ANSI y los caracteres
+# especiales rompen el parseo de las cadenas.
 #
 # Uso (PowerShell, desde la carpeta del proyecto):
 #   .\start_24_7.ps1                # dry-run (paper), 31 dias
@@ -34,7 +38,7 @@ powercfg /change monitor-timeout-ac 10   # la pantalla si puede apagarse
 
 # 2) Activar venv
 $venv = Join-Path $PSScriptRoot ".venv\Scripts\Activate.ps1"
-if (Test-Path $venv) { . $venv } else { Write-Host "AVISO: no se encontro .venv — usando python global" }
+if (Test-Path $venv) { . $venv } else { Write-Host "AVISO: no se encontro .venv - usando python global" }
 
 $mode = if ($Live) { "--live" } else { "--dry-run" }
 $deadline = (Get-Date).AddDays($Days)
@@ -44,15 +48,16 @@ Write-Host "=== 24/7 hasta $deadline | modo $mode ==="
 
 while ((Get-Date) -lt $deadline) {
     $remaining = ($deadline - (Get-Date)).TotalDays
-    Write-Host "[watchdog] lanzando forever ($([math]::Round($remaining,1)) dias restantes)..."
+    $remainingRounded = [math]::Round($remaining, 1)
+    Write-Host "[watchdog] lanzando forever ($remainingRounded dias restantes)..."
     python bot_crypto.py forever --days $remaining $mode
     $code = $LASTEXITCODE
     if ((Get-Date) -ge $deadline) { break }
     if ($code -eq 0) {
-        Write-Host "[watchdog] forever termino limpio (exit 0) — fin."
+        Write-Host "[watchdog] forever termino limpio (exit 0) - fin."
         break
     }
-    Write-Host "[watchdog] proceso murio (exit $code) — relanzo en $backoff s"
+    Write-Host "[watchdog] proceso murio (exit $code) - relanzo en $backoff s"
     Start-Sleep -Seconds $backoff
     $backoff = [math]::Min($backoff * 2, 900)
 }
