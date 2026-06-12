@@ -10,6 +10,9 @@ usa y qué revisar tú.
 
 ## 0) Instalación en un portátil virgen (Windows)
 
+> Requisitos: **~15 GB libres** en disco y conexión estable. Tiempo total
+> estimado: 2-4 h, casi todo descargas y entrenamiento desatendidos.
+
 1. Instalar **Python 3.11** (python.org, marcar "Add Python to PATH") y **Git**.
 2. Clonar y preparar el entorno:
    ```powershell
@@ -20,8 +23,14 @@ usa y qué revisar tú.
    .\.venv\Scripts\Activate.ps1
    pip install -r requirements.txt
    ```
-3. Crear `.env` con las keys de **testnet.binance.vision**:
-   `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `BINANCE_MODE=testnet`, `CRYPTO_PORTFOLIO=1000`.
+3. Crear el archivo `.env` en la raíz del proyecto con keys generadas en
+   **testnet.binance.vision** (las de la cuenta normal de Binance no sirven):
+   ```ini
+   BINANCE_API_KEY=tu_key_testnet
+   BINANCE_API_SECRET=tu_secret_testnet
+   BINANCE_MODE=testnet
+   CRYPTO_PORTFOLIO=1000
+   ```
 4. Datos: bajar la base histórica (6.4 GB, ver README §Datasets en Hugging
    Face) y **continuar la descarga hasta hoy** — el dataset de HF llega solo
    hasta su fecha de corte:
@@ -57,14 +66,13 @@ usa y qué revisar tú.
 7. **Historial**: las DBs de `state/` (predicciones, decisiones ML) se crean
    solas en el primer arranque. El mes empieza con historial limpio — es lo
    deseable para que las métricas midan solo esta prueba.
-8. Requisito de disco: ~15 GB libres.
 
 ## 1) Arranque (una sola vez)
 
 ```powershell
 cd crypto_bot
 .\.venv\Scripts\Activate.ps1
-python smoke_test.py --network        # todo debe dar OK
+python smoke_test.py --network        # debe dar 18/18 OK (o más)
 python bot_crypto.py status           # conexión Binance OK
 python bot_crypto.py risk             # guard NO tripped
 .\start_24_7.ps1                      # dry-run paper, 31 días
@@ -80,7 +88,7 @@ activa el venv y relanza el proceso si el intérprete muere. Dentro,
 - [ ] Windows Update en pausa / horas activas configuradas (un reboot
       automático mata el proceso; al relanzar, las posiciones PENDING se
       retoman y `check_outcomes` reconstruye el hueco con velas de 5m).
-- [ ] ~5 GB libres en disco (datasets crecen con el refresco diario).
+- [ ] ≥15 GB libres en disco (los datasets crecen con el refresco diario).
 - [ ] Ningún editor con las `.db` de `state/` abiertas.
 - [ ] Antivirus: excluir la carpeta del proyecto (los scans bloquean SQLite).
 
