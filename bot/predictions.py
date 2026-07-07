@@ -47,7 +47,7 @@ FEE_RT_PCT = 0.25
 
 def _conn():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("""
         CREATE TABLE IF NOT EXISTS predictions (
@@ -232,6 +232,10 @@ def check_outcomes(force_close=False):
                       Usado al vencer cada ronda en los tests de 1h.
     """
     from bot.crypto_models import MODELS
+
+    # Precios frescos: si el proceso lleva rato vivo (forever entre sesiones),
+    # el cache de crypto_data puede tener precios de minutos atras.
+    clear_cache()
 
     con = _conn()
     # Fix legacy NULL outcomes → PENDING

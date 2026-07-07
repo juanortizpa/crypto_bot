@@ -86,7 +86,7 @@ def _get_ml_decision_for_pred(pred_id: int) -> str:
     """Lee la decisión ML desde ml_decisions.db para el pred dado."""
     try:
         ml_db = os.path.join(os.path.dirname(os.path.dirname(__file__)), "state", "ml_decisions.db")
-        con = sqlite3.connect(ml_db)
+        con = sqlite3.connect(ml_db, timeout=30)
         row = con.execute(
             "SELECT ml_decision FROM ml_decisions WHERE opened_pred_id=?",
             (pred_id,)

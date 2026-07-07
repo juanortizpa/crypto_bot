@@ -87,11 +87,13 @@ def _close_position(con, pred_id: int, reason: str, current_price: float):
         hours_held = round((now - pred_time).total_seconds() / 3600, 4)
     except Exception:
         hours_held = None
+    qty = pred["quantity"] or 0
+    pnl_usd = round(qty * (current_price - entry), 2) if qty else None
     con.execute("""
         UPDATE predictions
-        SET outcome=?, price_at_outcome=?, pnl_pct=?, outcome_date=?, error_flags=?, hours_held=?
+        SET outcome=?, price_at_outcome=?, pnl_pct=?, pnl_usd=?, outcome_date=?, error_flags=?, hours_held=?
         WHERE id=?
-    """, (outcome, current_price, round(pnl_pct, 4),
+    """, (outcome, current_price, round(pnl_pct, 4), pnl_usd,
           now.isoformat(), f"CLOSED_BY_RUNNER:{reason}", hours_held, pred_id))
     con.commit()
     log("INFO", f"  [CLOSE] pred={pred_id} reason={reason} pnl={pnl_pct:+.3f}%")
@@ -120,7 +122,7 @@ def _monitor_open_positions(force_close_all: bool = False):
     # exactamente cuando mas importa cerrar bien. Limpiar SIEMPRE aqui.
     clear_cache()
 
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     rows = con.execute(
         "SELECT * FROM predictions WHERE outcome='PENDING'"
@@ -170,11 +172,13 @@ def _close_position_row(con, row, reason: str, current_price: float):
         hours_held = round((now - pred_time).total_seconds() / 3600, 4)
     except Exception:
         hours_held = None
+    qty = row["quantity"] or 0
+    pnl_usd = round(qty * (current_price - entry), 2) if qty else None
     con.execute("""
         UPDATE predictions
-        SET outcome=?, price_at_outcome=?, pnl_pct=?, outcome_date=?, error_flags=?, hours_held=?
+        SET outcome=?, price_at_outcome=?, pnl_pct=?, pnl_usd=?, outcome_date=?, error_flags=?, hours_held=?
         WHERE id=?
-    """, (outcome, current_price, round(pnl_pct, 4),
+    """, (outcome, current_price, round(pnl_pct, 4), pnl_usd,
           now.isoformat(), f"CLOSED_BY_RUNNER:{reason}", hours_held, pid))
     con.commit()
     log("INFO", f"  [CLOSE] pred={pid} sym={row['symbol']} reason={reason} pnl={pnl_pct:+.3f}%")
@@ -235,10 +239,30 @@ def _run_scan_cycle(session_start_iso: str = None):
         # Cargar simbolos ya operados en esta sesion (evita reentradas)
         _ssi = session_start_iso  # recibido como parametro
         session_syms = set(row[0] for row in open_con.execute(
-            "SELECT DISTINCT symbol FROM predictions WHERE outcome IN ('WIN','LOSS') AND predicted_at >= ?",
+            "SELECT DISTINCT symbol FROM predictions WHERE outcome IN ('WIN','LOSS','BE') AND predicted_at >= ?",
             (_ssi,)
         ).fetchall()) if _ssi else set()
+
+        # Pre-check de capacidad: si no hay cupo de trades ni capital
+        # disponible, no crear predicciones que asignar_capital va a dejar
+        # en $0 — quedaban PENDING sin capital ("fantasmas") monitoreadas
+        # para siempre y contando en el win rate.
+        from bot.position_sizing import MAX_TRADES, MAX_EXPOSURE_PCT, MIN_POSITION_USD
+        from bot.capital_profile import get_profile
+        open_count = open_con.execute(
+            "SELECT COUNT(*) FROM predictions WHERE outcome='PENDING' AND position_usd > 0"
+        ).fetchone()[0]
+        exposure = open_con.execute(
+            "SELECT COALESCE(SUM(position_usd),0) FROM predictions WHERE outcome='PENDING'"
+        ).fetchone()[0]
         open_con.close()
+        portfolio = get_profile().get("balance", 0) or float(os.environ.get("CRYPTO_PORTFOLIO", "1000"))
+        if open_count >= MAX_TRADES:
+            log("INFO", f"  Cupo lleno: {open_count}/{MAX_TRADES} posiciones abiertas — sin nuevas entradas")
+            return
+        if portfolio * MAX_EXPOSURE_PCT - exposure < MIN_POSITION_USD:
+            log("INFO", f"  Exposicion al limite (${exposure:.0f} de ${portfolio * MAX_EXPOSURE_PCT:.0f}) — sin nuevas entradas")
+            return
 
         # Importar ml_inference (puede fallar si numpy no esta instalado)
         try:
@@ -441,14 +465,22 @@ def _run_scan_cycle(session_start_iso: str = None):
         if new_pred_ids:
             con = trade_conn()
             sized = asignar_capital(con, new_pred_ids)
-            con.close()
             for s in sized:
                 if s.get("skipped"):
-                    log("WARN", f"  pred={s['id']} skipped: {s.get('skip_reason')}")
+                    # Sin capital asignado no hay trade: cancelar para que no
+                    # quede una prediccion fantasma PENDING contando en stats.
+                    con.execute(
+                        "UPDATE predictions SET outcome='CANCELLED', outcome_date=?, "
+                        "pnl_pct=0.0, error_flags=? WHERE id=?",
+                        (datetime.now().isoformat(),
+                         f"CANCELLED_SIZING:{s.get('skip_reason')}", s["id"]))
+                    log("WARN", f"  pred={s['id']} cancelada (sizing): {s.get('skip_reason')}")
                 else:
                     log("INFO",
                         f"  [SIZED] pred={s['id']} pos=${s['position_usd']} "
                         f"qty={s['quantity']} risk=${s['risk_usd']} ({s['risk_pct_portfolio']}%)")
+            con.commit()
+            con.close()
 
     except Exception as e:
         import traceback
@@ -459,32 +491,30 @@ def _run_scan_cycle(session_start_iso: str = None):
 def _compute_simulated_balance(initial_balance: float, since_iso: str = None) -> float:
     """
     Calcula el balance simulado en dry-run sumando el P&L de trades cerrados
-    DENTRO DE LA SESION ACTUAL (desde since_iso).
-    Asume position_size = 5% del capital inicial por trade (sizing HALF conservador).
+    (desde since_iso, o todos si since_iso es None).
+
+    Pondera cada trade por su position_usd REAL (el sizing que asigno
+    asignar_capital). Trades con position_usd=0 (sizing vetado/skip) no mueven
+    el balance; solo los legacy sin sizing (NULL) usan el fallback de 5%.
     """
     try:
         from bot.trade_monitor import DB_PATH
-        con = sqlite3.connect(DB_PATH)
+        con = sqlite3.connect(DB_PATH, timeout=30)
+        q = ("SELECT pnl_pct, position_usd FROM predictions "
+             "WHERE outcome IN ('WIN','LOSS','BE') AND pnl_pct IS NOT NULL")
+        params = ()
         if since_iso:
-            rows = con.execute(
-                "SELECT pnl_pct FROM predictions "
-                "WHERE outcome IN ('WIN','LOSS') AND pnl_pct IS NOT NULL "
-                "AND outcome_date >= ?",
-                (since_iso,)
-            ).fetchall()
-        else:
-            # Sin filtro de sesion: contar TODOS los trades historicos
-            rows = con.execute(
-                "SELECT pnl_pct FROM predictions "
-                "WHERE outcome IN ('WIN','LOSS') AND pnl_pct IS NOT NULL"
-            ).fetchall()
+            q += " AND outcome_date >= ?"
+            params = (since_iso,)
+        rows = con.execute(q, params).fetchall()
         con.close()
 
-        POSITION_PCT = 0.05  # 5% del capital por trade
+        POSITION_PCT = 0.05  # fallback para trades legacy sin sizing
         sim_balance = initial_balance
-        for r in rows:
-            pnl = r[0] if isinstance(r, tuple) else r["pnl_pct"]
-            sim_balance += initial_balance * POSITION_PCT * (pnl / 100.0)
+        for pnl, pos_usd in rows:
+            if pos_usd is None:
+                pos_usd = initial_balance * POSITION_PCT
+            sim_balance += pos_usd * (pnl / 100.0)
         return round(max(sim_balance, 0.0), 2)
     except Exception:
         return initial_balance
@@ -539,7 +569,13 @@ def run(max_hours: float = None, dry_run: bool = None):
         if not balance or balance <= 0:
             balance = float(os.environ.get("CRYPTO_PORTFOLIO", "480"))
 
-    init_session(balance)
+    # init_session necesita el balance ACTUAL (capital + P&L acumulado), no el
+    # capital inicial: el snapshot diario de start_balance se toma de aqui.
+    # Con el capital inicial, una perdida acumulada > MAX_DAILY_LOSS_PCT
+    # disparaba DAILY_LOSS al arrancar CADA dia aunque hoy no se perdiera nada,
+    # dejando el bot en solo-monitoreo el resto de la prueba.
+    current_bal = _compute_simulated_balance(balance, since_iso=None)
+    init_session(current_bal if current_bal > 0 else balance)
     # Recalcular balance real sumando TODOS los trades historicos cerrados
     _refresh_risk_balance(balance, dry_run, since_iso=None)
     print(risk_report())

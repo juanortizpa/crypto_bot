@@ -23,11 +23,31 @@ from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from bot.crypto_data import _cache
 from bot.logger import log
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)),
                        "state", "sentiment.db")
+
+# Cache propio con TTL. Antes se usaba crypto_data._cache, que el monitor
+# limpia CADA ciclo (60s): eso relanzaba ~14 requests RSS a Google News por
+# posicion por minuto — lento (timeouts de 8s en serie) y suficiente para
+# que Google throttlee la IP en una corrida 24/7. Las noticias no cambian
+# minuto a minuto: 15 min de TTL mantiene N1/R6 frescos sin martillar la red.
+_sent_cache = {}   # key -> (timestamp, value)
+SENT_TTL_SEC = float(os.environ.get("CRYPTO_SENTIMENT_TTL_SEC", "900"))
+
+import time as _time
+
+
+def _cache_get(key):
+    hit = _sent_cache.get(key)
+    if hit and (_time.time() - hit[0]) < SENT_TTL_SEC:
+        return hit[1]
+    return None
+
+
+def _cache_put(key, value):
+    _sent_cache[key] = (_time.time(), value)
 
 # ════════════════════════════════════════════════════════════════════════
 # FIGURAS INFLUYENTES + sus queries y assets afectados
@@ -242,9 +262,12 @@ GENERIC_BEARISH = [
 
 def _fetch_google_news(query, max_hours=24):
     """Retorna lista de (titulo, horas_desde_publicacion)."""
-    cache_key = f"sent_{query[:30]}"
-    if cache_key in _cache:
-        return _cache[cache_key]
+    # Key con el query COMPLETO: truncar a 30 chars hacia colisionar
+    # queries de figuras distintas (compartian titulares por error).
+    cache_key = f"sent_{query}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         url = (
@@ -275,7 +298,7 @@ def _fetch_google_news(query, max_hours=24):
             text = f"{title} {desc}".lower()
             items.append({"text": text, "title": title, "hours_ago": hours_ago})
 
-        _cache[cache_key] = items
+        _cache_put(cache_key, items)
         return items
 
     except Exception as e:
@@ -370,8 +393,9 @@ def get_sentiment(symbol=None):
       - weight:     2.0 (peso doble en gate)
     """
     cache_key = f"sentiment_{symbol or 'market'}"
-    if cache_key in _cache:
-        return _cache[cache_key]
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
 
     figures_data = {}
     alerts = []
@@ -441,7 +465,7 @@ def get_sentiment(symbol=None):
     # Guardar en historial
     _save_sentiment(symbol or "MARKET", result)
 
-    _cache[cache_key] = result
+    _cache_put(cache_key, result)
     return result
 
 

@@ -27,7 +27,7 @@ DB_PATH = os.environ.get(
 
 def _conn():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
 
     con.execute("""
@@ -515,6 +515,8 @@ def summary(pred_id: int):
         print(f"  Trade #{pred_id} no encontrado.")
         con.close()
         return
+
+    pred = dict(pred)  # sqlite3.Row no tiene .get()
 
     print(f"\n  === TRADE #{pred_id} ===")
     print(f"  Symbol:  {pred['symbol']}")

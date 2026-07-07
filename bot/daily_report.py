@@ -41,12 +41,24 @@ def _capital() -> float:
 
 
 def _conn():
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     return con
 
 
 # ── Metricas ─────────────────────────────────────────────────────────────
+
+def _pos_usd(r, capital: float) -> float:
+    """Posicion real del trade en USD. NULL (legacy sin sizing) usa el
+    fallback de 5%; 0 (sizing vetado) no mueve la curva de equity."""
+    try:
+        v = r["position_usd"]
+    except (IndexError, KeyError):
+        v = None
+    if v is None:
+        return capital * POSITION_PCT
+    return float(v)
+
 
 def _trade_stats(rows) -> dict:
     """Estadisticas de una lista de trades cerrados (rows con outcome/pnl_pct)."""
@@ -64,14 +76,16 @@ def _trade_stats(rows) -> dict:
     pf = (gross_win / gross_loss) if gross_loss > 0 else (float("inf") if gross_win > 0 else 0.0)
 
     capital = _capital()
-    pnl_usd = sum(capital * POSITION_PCT * (p / 100.0) for p in pnls)
+    # P&L en dolares ponderado por el sizing REAL de cada trade
+    pnl_usd = sum(_pos_usd(r, capital) * ((r["pnl_pct"] or 0.0) / 100.0)
+                  for r in resolved)
 
     # Max drawdown de la curva de equity simulada (orden cronologico)
     equity = capital
     peak = capital
     max_dd = 0.0
     for r in sorted(resolved, key=lambda x: x["outcome_date"] or ""):
-        equity += capital * POSITION_PCT * ((r["pnl_pct"] or 0.0) / 100.0)
+        equity += _pos_usd(r, capital) * ((r["pnl_pct"] or 0.0) / 100.0)
         peak = max(peak, equity)
         if peak > 0:
             max_dd = max(max_dd, (peak - equity) / peak * 100.0)
@@ -207,7 +221,8 @@ def generate_daily_report(day_iso: str = None) -> str:
     a(f"# Reporte diario — {day_iso}")
     a("")
     a(f"_Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · "
-      f"capital simulado ${_capital():.0f} · posicion {POSITION_PCT*100:.0f}% por trade_")
+      f"capital simulado ${_capital():.0f} · P&L ponderado por sizing real "
+      f"(fallback {POSITION_PCT*100:.0f}% en trades sin sizing)_")
     a("")
     a("## Trades del dia")
     a("")
