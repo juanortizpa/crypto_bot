@@ -192,6 +192,12 @@ def _guards_status() -> dict:
         out["model_health"] = status_line()
     except Exception as e:
         out["model_health"] = f"error: {e}"
+    try:
+        from bot.market_regime import current_regime_label, today_status
+        lbl = current_regime_label()
+        out["regime"] = f"{lbl} [{today_status()}]" if lbl else "sin clasificar"
+    except Exception as e:
+        out["regime"] = f"error: {e}"
     return out
 
 
@@ -271,6 +277,7 @@ def generate_daily_report(day_iso: str = None) -> str:
     a(f"- Risk guard: {guards['risk_guard']}")
     a(f"- Circuit breaker: {guards['circuit_breaker']}")
     a(f"- Drift guard (ML): {guards['model_health']}")
+    a(f"- Comportamiento (regimen): {guards['regime']}")
     a(f"- Posiciones abiertas: {len(open_pos)}"
       + (f" ({', '.join(r['symbol'] for r in open_pos)})" if open_pos else ""))
     if freshness:

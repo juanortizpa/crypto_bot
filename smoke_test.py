@@ -178,6 +178,32 @@ def t_drift_guard_wired():
     assert "record_features" in inspect.getsource(ml_inference.predict), \
         "ml_inference debe alimentar el drift guard"
 
+# ── Regimenes de comportamiento (market_regime) ──────────────────────────
+def t_regime_math():
+    from bot.market_regime import fit_from_vectors, classify_vector, _kmeans
+    import random as _r
+    rnd = _r.Random(1)
+    # dos nubes bien separadas en 11 dims
+    X = [[rnd.gauss(0, 1) for _ in range(11)] for _ in range(80)] + \
+        [[rnd.gauss(8, 1) for _ in range(11)] for _ in range(80)]
+    cents, labels, _ = _kmeans(X, 2)
+    assert len(set(labels[:80])) == 1 and len(set(labels[80:])) == 1, \
+        "kmeans debe separar dos nubes obvias"
+
+def t_regime_wired():
+    import inspect
+    from bot import runner, forever, meta_model, predictions
+    assert "today_status" in inspect.getsource(runner._run_scan_cycle), \
+        "runner debe vetar Modelo D en NEW_BEHAVIOR"
+    assert "classify_today" in inspect.getsource(forever._run_maintenance), \
+        "forever debe clasificar el comportamiento a diario"
+    assert "regime_fit" in inspect.getsource(forever._run_maintenance), \
+        "forever debe re-aprender el catalogo semanalmente"
+    assert "sample_weight" in inspect.getsource(meta_model.train_meta_model), \
+        "meta_model debe ponderar por vigencia del regimen"
+    assert "current_regime_label" in inspect.getsource(predictions.predict), \
+        "cada prediccion debe grabarse con su regimen"
+
 
 # ── Network checks (opcionales) ──────────────────────────────────────────
 def t_short_signal_live():
@@ -219,6 +245,8 @@ if __name__ == "__main__":
     check("24/7: quality gate del ensemble", t_ensemble_quality_gate)
     check("drift guard: PSI y test binomial", t_drift_guard_math)
     check("drift guard: cableado en runner/forever/ml", t_drift_guard_wired)
+    check("regimenes: kmeans separa comportamientos", t_regime_math)
+    check("regimenes: cableado en runner/forever/meta/predict", t_regime_wired)
     if network:
         check("short_signal en vivo (BTCUSDT)", t_short_signal_live)
         check("_path_outcome en vivo (BTCUSDT)", t_path_outcome_live)

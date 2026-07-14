@@ -254,6 +254,15 @@ def collect_meta_training_data() -> list:
     """, (ACCOUNTING_FIX_DATE,)).fetchall()
     con.close()
 
+    # Regimen actual: los trades de comportamientos que YA NO estan
+    # sucediendo pesan menos en el entrenamiento (regime-first).
+    current_regime = None
+    try:
+        from bot.market_regime import current_regime_label
+        current_regime = current_regime_label()
+    except Exception:
+        pass
+
     rows = []
     for pred in closed:
         label = 1 if pred["outcome"] == "WIN" else 0
@@ -268,15 +277,30 @@ def collect_meta_training_data() -> list:
             log("WARN", f"meta_model: skip pred #{pred['id']}: {e}")
             continue
 
+        try:
+            trade_regime = pred["regime"]
+        except (IndexError, KeyError):
+            trade_regime = None  # DB anterior a la columna regime
+
+        if current_regime is None or trade_regime is None:
+            weight = 0.8   # sin informacion de regimen: peso casi pleno
+        elif trade_regime == current_regime:
+            weight = 1.0   # mismo comportamiento que hoy: evidencia plena
+        else:
+            weight = 0.5   # comportamiento que ya no sucede: de-ponderar
+
         rows.append({
             "features": features,
             "label": label,
             "pred_id": pred["id"],
             "model": pred["model"],
             "pnl_pct": pred["pnl_pct"],
+            "regime": trade_regime,
+            "weight": weight,
         })
 
-    log("INFO", f"collect_meta_training_data: {len(rows)} ejemplos de {len(closed)} trades")
+    log("INFO", f"collect_meta_training_data: {len(rows)} ejemplos de {len(closed)} trades"
+                + (f" (ponderados vs regimen actual: {current_regime})" if current_regime else ""))
     return rows
 
 
@@ -356,6 +380,8 @@ def train_meta_model(verbose=True) -> dict | None:
 
     X = np.array([[d["features"][col] for col in FEATURE_COLS] for d in data])
     y = np.array([d["label"] for d in data])
+    # Pesos por regimen: trades de comportamientos extintos aportan menos
+    w = np.array([d.get("weight", 1.0) for d in data])
 
     # Usar StratifiedKFold para mantener proporcion WIN/LOSS en cada fold
     n_splits = min(5, len(data) // 10)
@@ -425,10 +451,14 @@ def train_meta_model(verbose=True) -> dict | None:
                 "oof_mask": oof_mask.copy(),
             }
 
-    # Entrenar modelo final con todos los datos usando el mejor clasificador
+    # Entrenar modelo final con todos los datos usando el mejor clasificador,
+    # ponderando cada trade por la vigencia de su regimen (sample_weight).
     from sklearn.base import clone
     clf_final = clone(best_results["template"])
-    clf_final.fit(X, y)
+    try:
+        clf_final.fit(X, y, sample_weight=w)
+    except TypeError:
+        clf_final.fit(X, y)
 
     cv_acc = best_acc
     cv_std = np.std(best_results["fold_accs"])

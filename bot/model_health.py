@@ -428,6 +428,31 @@ def _check_regime() -> list:
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# Capa D — Comportamiento del mercado (catalogo de regimenes)
+# ══════════════════════════════════════════════════════════════════════════
+
+def _check_behavior() -> list:
+    """Dias recientes clasificados como COMPORTAMIENTO NUEVO (nunca visto en
+    el catalogo 2024→hoy) son evidencia directa de que los modelos estan
+    operando fuera de lo que conocen."""
+    signals = []
+    try:
+        from bot.market_regime import recent_novelty, current_regime_label
+        n_new = recent_novelty(days=3)
+        if n_new >= 2:
+            signals.append(("STRONG", "BEHAVIOR_NEW",
+                            f"{n_new} de los ultimos 3 dias en comportamiento "
+                            f"NUNCA VISTO en el catalogo de regimenes"))
+        elif n_new == 1:
+            signals.append(("MODERATE", "BEHAVIOR_NEW",
+                            "Hoy el mercado no se parece a ningun "
+                            "comportamiento conocido del catalogo"))
+    except Exception:
+        pass  # sin catalogo/historia: fail-open
+    return signals
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # Agregacion + API publica
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -440,6 +465,7 @@ def evaluate() -> dict:
     signals += _check_performance(window_start)
     signals += _check_features()
     signals += _check_regime()
+    signals += _check_behavior()
 
     strong = [s for s in signals if s[0] == "STRONG"]
     moderate = [s for s in signals if s[0] == "MODERATE"]

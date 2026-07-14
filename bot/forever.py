@@ -266,10 +266,28 @@ def _monitor_only_cycle(seconds: float = 300):
 def _run_maintenance(st: dict):
     from bot import maintenance
 
+    # Catalogo de comportamientos: re-aprenderlo cada semana para que cubra
+    # SIEMPRE desde 2024 hasta hoy (regime-first: el catalogo no envejece).
+    if _due(st, "last_regime_fit", 7.0):
+        beat("MAINT_REGIME")
+        try:
+            from bot.market_regime import fit as regime_fit
+            regime_fit()
+        except Exception as e:
+            log("WARN", f"forever: fit de regimenes fallo (no fatal): {e}")
+        _mark(st, "last_regime_fit")
+
     # Drift guard: chequeo diario. Si el ensemble esta DEGRADED (dejo de
     # predecir), adelantar el retrain — con freno de 3 dias para no
     # reentrenar en bucle si el retrain sale rechazado por el quality gate.
     if _due(st, "last_drift_check", 1.0):
+        # Clasificar el comportamiento de HOY antes de evaluar drift, para
+        # que la capa de comportamiento del guard vea datos frescos.
+        try:
+            from bot.market_regime import classify_today
+            classify_today()
+        except Exception as e:
+            log("WARN", f"forever: clasificacion de regimen fallo (no fatal): {e}")
         try:
             from bot.model_health import evaluate as drift_evaluate
             res = drift_evaluate()

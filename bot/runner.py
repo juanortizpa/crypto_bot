@@ -404,6 +404,19 @@ def _run_scan_cycle(session_start_iso: str = None):
                             continue
                     except Exception:
                         pass
+                    # Comportamiento NUEVO del mercado (nunca visto en el
+                    # catalogo de regimenes): el ML de D se entreno en
+                    # comportamientos que hoy no aplican -> no abrir dips.
+                    _allow_new_behavior = os.environ.get(
+                        "CRYPTO_ALLOW_NEW_BEHAVIOR", "").lower() in ("1", "true", "yes")
+                    try:
+                        from bot.market_regime import today_status
+                        if today_status() == "NEW_BEHAVIOR" and not _allow_new_behavior:
+                            log("WARN", f"  {sym}: [D] mercado en COMPORTAMIENTO "
+                                        f"NUEVO (regimen nunca visto) — skip dip")
+                            continue
+                    except Exception:
+                        pass
                     if ml_decision == "UNKNOWN" and not _allow_unknown:
                         log("INFO", f"  {sym}: [D] ML UNKNOWN -> skip (capital protegido)")
                         continue
