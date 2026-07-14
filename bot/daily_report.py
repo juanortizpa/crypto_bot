@@ -41,12 +41,24 @@ def _capital() -> float:
 
 
 def _conn():
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     return con
 
 
 # ── Metricas ─────────────────────────────────────────────────────────────
+
+def _pos_usd(r, capital: float) -> float:
+    """Posicion real del trade en USD. NULL (legacy sin sizing) usa el
+    fallback de 5%; 0 (sizing vetado) no mueve la curva de equity."""
+    try:
+        v = r["position_usd"]
+    except (IndexError, KeyError):
+        v = None
+    if v is None:
+        return capital * POSITION_PCT
+    return float(v)
+
 
 def _trade_stats(rows) -> dict:
     """Estadisticas de una lista de trades cerrados (rows con outcome/pnl_pct)."""
@@ -64,14 +76,16 @@ def _trade_stats(rows) -> dict:
     pf = (gross_win / gross_loss) if gross_loss > 0 else (float("inf") if gross_win > 0 else 0.0)
 
     capital = _capital()
-    pnl_usd = sum(capital * POSITION_PCT * (p / 100.0) for p in pnls)
+    # P&L en dolares ponderado por el sizing REAL de cada trade
+    pnl_usd = sum(_pos_usd(r, capital) * ((r["pnl_pct"] or 0.0) / 100.0)
+                  for r in resolved)
 
     # Max drawdown de la curva de equity simulada (orden cronologico)
     equity = capital
     peak = capital
     max_dd = 0.0
     for r in sorted(resolved, key=lambda x: x["outcome_date"] or ""):
-        equity += capital * POSITION_PCT * ((r["pnl_pct"] or 0.0) / 100.0)
+        equity += _pos_usd(r, capital) * ((r["pnl_pct"] or 0.0) / 100.0)
         peak = max(peak, equity)
         if peak > 0:
             max_dd = max(max_dd, (peak - equity) / peak * 100.0)
@@ -161,7 +175,7 @@ def _ml_quality(day_iso: str = None) -> dict:
 
 
 def _guards_status() -> dict:
-    out = {"risk_guard": "?", "circuit_breaker": "?"}
+    out = {"risk_guard": "?", "circuit_breaker": "?", "model_health": "?"}
     try:
         from bot.risk_guard import is_tripped, trip_reason
         out["risk_guard"] = f"TRIPPED ({trip_reason()})" if is_tripped() else "OK"
@@ -173,6 +187,17 @@ def _guards_status() -> dict:
         out["circuit_breaker"] = f"BLOCKED ({reason})" if blocked else "OK"
     except Exception as e:
         out["circuit_breaker"] = f"error: {e}"
+    try:
+        from bot.model_health import status_line
+        out["model_health"] = status_line()
+    except Exception as e:
+        out["model_health"] = f"error: {e}"
+    try:
+        from bot.market_regime import current_regime_label, today_status
+        lbl = current_regime_label()
+        out["regime"] = f"{lbl} [{today_status()}]" if lbl else "sin clasificar"
+    except Exception as e:
+        out["regime"] = f"error: {e}"
     return out
 
 
@@ -207,7 +232,8 @@ def generate_daily_report(day_iso: str = None) -> str:
     a(f"# Reporte diario — {day_iso}")
     a("")
     a(f"_Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · "
-      f"capital simulado ${_capital():.0f} · posicion {POSITION_PCT*100:.0f}% por trade_")
+      f"capital simulado ${_capital():.0f} · P&L ponderado por sizing real "
+      f"(fallback {POSITION_PCT*100:.0f}% en trades sin sizing)_")
     a("")
     a("## Trades del dia")
     a("")
@@ -250,6 +276,8 @@ def generate_daily_report(day_iso: str = None) -> str:
     a("")
     a(f"- Risk guard: {guards['risk_guard']}")
     a(f"- Circuit breaker: {guards['circuit_breaker']}")
+    a(f"- Drift guard (ML): {guards['model_health']}")
+    a(f"- Comportamiento (regimen): {guards['regime']}")
     a(f"- Posiciones abiertas: {len(open_pos)}"
       + (f" ({', '.join(r['symbol'] for r in open_pos)})" if open_pos else ""))
     if freshness:

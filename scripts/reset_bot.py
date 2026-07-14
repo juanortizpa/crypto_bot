@@ -12,7 +12,8 @@ Uso:
 import sys, os, json, sqlite3
 from datetime import datetime, date
 
-sys.path.insert(0, os.path.dirname(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
 print("=" * 55)
 print("  RESET BOT — limpieza para nueva sesion")
@@ -72,14 +73,14 @@ except Exception as e:
 # ── 2. Resetear Risk Guard ─────────────────────────────────
 print("\n[2/3] Reseteando Risk Guard...")
 
-STATE_DIR  = os.path.join(os.path.dirname(__file__), "state")
+STATE_DIR  = os.path.join(ROOT, "state")
 STATE_FILE = os.path.join(STATE_DIR, "risk_guard.json")
 
 try:
     # Leer balance actual si existe
     # Fallback: leer del .env (CRYPTO_PORTFOLIO o CRYPTO_INITIAL_CAPITAL)
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    load_dotenv(os.path.join(ROOT, ".env"))
     _env_capital = (
         os.environ.get("CRYPTO_INITIAL_CAPITAL") or
         os.environ.get("CRYPTO_PORTFOLIO") or

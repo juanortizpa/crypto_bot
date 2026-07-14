@@ -104,6 +104,32 @@ def _mark(st: dict, key: str):
     _save_state(st)
 
 
+# ── Interrupcion (Ctrl+C) ────────────────────────────────────────────────
+# SessionManager instala un handler global de SIGINT/SIGTERM que solo marca
+# un flag (para cierre ordenado de la sesion). Ese handler sigue instalado
+# cuando la sesion termina, asi que un Ctrl+C fuera de la sesion (sleep de
+# mantenimiento, monitor-only, backoff) NO lanza KeyboardInterrupt por si
+# solo. Estos helpers convierten el flag en KeyboardInterrupt para que el
+# orquestador pueda terminar ordenadamente.
+
+def _session_interrupted() -> bool:
+    try:
+        from bot.session_manager import SessionManager
+        sm = SessionManager.current()
+        return bool(sm is not None and sm._interrupted)
+    except Exception:
+        return False
+
+
+def _sleep(seconds: float):
+    """Sleep interrumpible: chequea el flag de Ctrl+C cada segundo."""
+    end = time.time() + seconds
+    while time.time() < end:
+        if _session_interrupted():
+            raise KeyboardInterrupt
+        time.sleep(min(1.0, max(0.0, end - time.time())))
+
+
 # ── Preflight ────────────────────────────────────────────────────────────
 
 def _wait_for_network():
@@ -119,7 +145,7 @@ def _wait_for_network():
         except Exception as e:
             log("WARN", f"forever: error de conexion ({e}) — retry en {delay}s")
         beat("WAIT_NETWORK", retry_in_s=delay)
-        time.sleep(delay)
+        _sleep(delay)
         delay = min(delay * 2, 600)
 
 
@@ -174,7 +200,7 @@ def _eval_ml():
 
 def _pending_count() -> int:
     try:
-        con = sqlite3.connect(os.path.join(ROOT, "state", "crypto_predictions.db"))
+        con = sqlite3.connect(os.path.join(ROOT, "state", "crypto_predictions.db"), timeout=30)
         n = con.execute("SELECT COUNT(*) FROM predictions WHERE outcome='PENDING'").fetchone()[0]
         con.close()
         return n
@@ -232,13 +258,50 @@ def _monitor_only_cycle(seconds: float = 300):
     except Exception as e:
         log("WARN", f"forever: monitor-only fallo: {e}")
     _resolve_outcomes()
-    time.sleep(seconds)
+    _sleep(seconds)
 
 
 # ── Mantenimiento programado ─────────────────────────────────────────────
 
 def _run_maintenance(st: dict):
     from bot import maintenance
+
+    # Catalogo de comportamientos: re-aprenderlo cada semana para que cubra
+    # SIEMPRE desde 2024 hasta hoy (regime-first: el catalogo no envejece).
+    if _due(st, "last_regime_fit", 7.0):
+        beat("MAINT_REGIME")
+        try:
+            from bot.market_regime import fit as regime_fit
+            regime_fit()
+        except Exception as e:
+            log("WARN", f"forever: fit de regimenes fallo (no fatal): {e}")
+        _mark(st, "last_regime_fit")
+
+    # Drift guard: chequeo diario. Si el ensemble esta DEGRADED (dejo de
+    # predecir), adelantar el retrain — con freno de 3 dias para no
+    # reentrenar en bucle si el retrain sale rechazado por el quality gate.
+    if _due(st, "last_drift_check", 1.0):
+        # Clasificar el comportamiento de HOY antes de evaluar drift, para
+        # que la capa de comportamiento del guard vea datos frescos.
+        try:
+            from bot.market_regime import classify_today
+            classify_today()
+        except Exception as e:
+            log("WARN", f"forever: clasificacion de regimen fallo (no fatal): {e}")
+        try:
+            from bot.model_health import evaluate as drift_evaluate
+            res = drift_evaluate()
+            log("INFO", f"forever: drift guard -> {res['status']}")
+            if res["status"] == "DEGRADED" and _due(st, "last_drift_forced_retrain", 3.0):
+                st["last_ensemble_retrain"] = (
+                    datetime.now() - timedelta(days=ENSEMBLE_RETRAIN_DAYS)
+                ).isoformat()
+                _mark(st, "last_drift_forced_retrain")
+                log("WARN", "forever: drift guard DEGRADED — retrain del "
+                            "ensemble adelantado (quality gate OOS decidira)")
+        except Exception as e:
+            log("WARN", f"forever: drift guard fallo (no fatal): {e}")
+        _mark(st, "last_drift_check")
 
     if _due(st, "last_backup", BACKUP_DAYS):
         beat("MAINT_BACKUP")
@@ -338,7 +401,7 @@ def run_forever(days: float = None, dry_run: bool = None):
             if not _check_disk() or not _check_db():
                 log("ERROR", "forever: preflight fallo (disco/DB) — reintento en 30 min")
                 beat("PREFLIGHT_FAILED")
-                time.sleep(1800)
+                _sleep(1800)
                 continue
 
             _resolve_outcomes()
@@ -370,6 +433,10 @@ def run_forever(days: float = None, dry_run: bool = None):
                 st["sessions"] += 1
                 consec_crashes = 0
                 _save_state(st)
+                # Ctrl+C durante la sesion: el runner cierra ordenado y
+                # retorna; propagar aqui para terminar el orquestador.
+                if _session_interrupted():
+                    raise KeyboardInterrupt
             except KeyboardInterrupt:
                 raise
             except Exception:
@@ -381,7 +448,7 @@ def run_forever(days: float = None, dry_run: bool = None):
                              f"(#{consec_crashes} seguido) — reinicio en {backoff:.0f}s\n"
                              + traceback.format_exc())
                 beat("CRASHED", consec=consec_crashes, retry_in_s=backoff)
-                time.sleep(backoff)
+                _sleep(backoff)
 
             # ── POST ─────────────────────────────────────────────
             beat("POST_SESSION", sessions=st["sessions"])

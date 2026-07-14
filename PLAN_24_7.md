@@ -150,7 +150,7 @@ Y una vez por semana:
 ```powershell
 python bot_crypto.py readiness     # cuántos criterios de lanzamiento se cumplen ya
 python bot_crypto.py ml-report     # calidad de las decisiones ML
-python run_crypto_models.py report # WR/expectancy por modelo
+python bot_crypto.py report        # WR/expectancy por modelo
 ```
 
 Señales de alarma:

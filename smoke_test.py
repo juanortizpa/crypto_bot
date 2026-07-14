@@ -24,7 +24,6 @@ def check(name, fn):
 # ── 1. Imports de todos los modulos tocados ──────────────────────────────
 def t_imports():
     import bot.predictions
-    import bot.predictions_realtime
     import bot.crypto_gate
     import bot.crypto_models
     import bot.short_signal
@@ -82,13 +81,6 @@ def t_ml_guard():
         assert (m.get("trained_at") or "")[:10] >= ACCOUNTING_FIX_DATE
     if e is not None:
         assert (e.get("trained_at") or "")[:10] >= ACCOUNTING_FIX_DATE
-
-# ── 8. Monitor importa clear_cache (fix precios congelados) ──────────────
-def t_monitor_cache():
-    import inspect
-    import bot.predictions_realtime as prt
-    src = inspect.getsource(prt.monitor_positions_realtime)
-    assert "clear_cache()" in src, "el monitor debe limpiar cache por ciclo"
 
 # ── 9. short_signal estructura ───────────────────────────────────────────
 def t_short_signal_offline():
@@ -157,6 +149,53 @@ def t_ensemble_quality_gate():
     assert "deployable" in src and "_restore_results" in src, \
         "retrain_ensemble debe tener quality gate con restore"
 
+# ── Drift guard (model_health) ───────────────────────────────────────────
+def t_drift_guard_math():
+    from bot.model_health import _psi, _binom_tail_p
+    # PSI ~0 con la misma distribucion; alto con distribuciones distintas
+    same = list(range(100))
+    assert _psi(same, same) < 0.01
+    assert _psi(same, [x + 80 for x in same]) > 0.25
+    # Binomial: 4 wins de 20 con p0=0.55 es muy improbable
+    assert _binom_tail_p(20, 4, 0.55) < 0.01
+    assert _binom_tail_p(20, 12, 0.55) > 0.2
+
+def t_drift_guard_wired():
+    import inspect
+    from bot import runner, forever, ml_inference
+    assert "is_ml_trusted" in inspect.getsource(runner._run_scan_cycle), \
+        "runner debe consultar el drift guard antes de abrir Modelo D"
+    assert "drift_evaluate" in inspect.getsource(forever._run_maintenance), \
+        "forever debe evaluar drift a diario"
+    assert "record_features" in inspect.getsource(ml_inference.predict), \
+        "ml_inference debe alimentar el drift guard"
+
+# ── Regimenes de comportamiento (market_regime) ──────────────────────────
+def t_regime_math():
+    from bot.market_regime import fit_from_vectors, classify_vector, _kmeans
+    import random as _r
+    rnd = _r.Random(1)
+    # dos nubes bien separadas en 11 dims
+    X = [[rnd.gauss(0, 1) for _ in range(11)] for _ in range(80)] + \
+        [[rnd.gauss(8, 1) for _ in range(11)] for _ in range(80)]
+    cents, labels, _ = _kmeans(X, 2)
+    assert len(set(labels[:80])) == 1 and len(set(labels[80:])) == 1, \
+        "kmeans debe separar dos nubes obvias"
+
+def t_regime_wired():
+    import inspect
+    from bot import runner, forever, meta_model, predictions
+    assert "today_status" in inspect.getsource(runner._run_scan_cycle), \
+        "runner debe vetar Modelo D en NEW_BEHAVIOR"
+    assert "classify_today" in inspect.getsource(forever._run_maintenance), \
+        "forever debe clasificar el comportamiento a diario"
+    assert "regime_fit" in inspect.getsource(forever._run_maintenance), \
+        "forever debe re-aprender el catalogo semanalmente"
+    assert "sample_weight" in inspect.getsource(meta_model.train_meta_model), \
+        "meta_model debe ponderar por vigencia del regimen"
+    assert "current_regime_label" in inspect.getsource(predictions.predict), \
+        "cada prediccion debe grabarse con su regimen"
+
 
 # ── Network checks (opcionales) ──────────────────────────────────────────
 def t_short_signal_live():
@@ -185,7 +224,6 @@ if __name__ == "__main__":
     check("circuit breaker operativo", t_breaker)
     check("contabilidad fee-aware (FEE_RT_PCT, path)", t_fee_const)
     check("guard de modelos ML contaminados", t_ml_guard)
-    check("monitor limpia cache por ciclo", t_monitor_cache)
     check("short_signal estructura", t_short_signal_offline)
     check("runner: monitor limpia cache", t_runner_monitor_cache)
     check("runner: cierres fee-aware", t_runner_fee_aware)
@@ -196,6 +234,10 @@ if __name__ == "__main__":
     check("24/7: retrain solo con trades post-fix", t_training_data_post_fix)
     check("24/7: logger con rotacion", t_logger_rotation)
     check("24/7: quality gate del ensemble", t_ensemble_quality_gate)
+    check("drift guard: PSI y test binomial", t_drift_guard_math)
+    check("drift guard: cableado en runner/forever/ml", t_drift_guard_wired)
+    check("regimenes: kmeans separa comportamientos", t_regime_math)
+    check("regimenes: cableado en runner/forever/meta/predict", t_regime_wired)
     if network:
         check("short_signal en vivo (BTCUSDT)", t_short_signal_live)
         check("_path_outcome en vivo (BTCUSDT)", t_path_outcome_live)

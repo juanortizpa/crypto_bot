@@ -90,7 +90,7 @@ def evaluate_model(model_id, gate, tech):
         return factors.get(factor_name, {}).get("color", YELLOW)
 
     # ── GUARDAS GLOBALES (todos los modelos excepto D) ──────────────────
-    # Tu propio diagnostico (DIAGNOSIS_0TRADES.md) lo dice: la senal viene
+    # Tu propio diagnostico (docs/legacy/DIAGNOSIS_0TRADES.md) lo dice: la senal viene
     # del REGIMEN, no de los features. Estas guardas lo aplican:
     #
     # 1) Regimen BTC bajista (M1 RED): un sistema long-only pierde en serie

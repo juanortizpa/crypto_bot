@@ -270,6 +270,13 @@ def retrain_ensemble() -> str:
         return "REJECTED_RESTORED"
 
     _reload_inference()
+    # Ensemble nuevo: los trades del modelo anterior ya no describen a este.
+    # Resetear la ventana de performance del drift guard.
+    try:
+        from bot.model_health import reset_performance_window
+        reset_performance_window()
+    except Exception:
+        pass
     log("INFO", "maintenance: nuevo ensemble ADOPTADO (deployable OOS)")
     return "ADOPTED"
 

@@ -218,8 +218,7 @@ CRYPTO_PAIRS = TOP_20  # Solo 20 entrenadas
 
 ### PASO 2: Ejecutar con TOP_20
 ```bash
-python run_crypto_models.py full
-python run_crypto_models.py monitor
+python bot_crypto.py run --dry-run
 ```
 
 Validar win rate durante 1-2 semanas.

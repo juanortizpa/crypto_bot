@@ -47,7 +47,7 @@ FEE_RT_PCT = 0.25
 
 def _conn():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("""
         CREATE TABLE IF NOT EXISTS predictions (
@@ -85,6 +85,7 @@ def _conn():
         "risk_usd REAL",
         "pnl_usd REAL",
         "error_flags TEXT",
+        "regime TEXT",
     ]:
         try:
             con.execute(f"ALTER TABLE predictions ADD COLUMN {col_def}")
@@ -130,13 +131,23 @@ def predict(symbol, verbose=True, model="A", stop_price=None, target_price=None,
 
     factors_json = json.dumps({k: v["color"] for k, v in gate.factors.items()})
 
+    # Etiquetar con el comportamiento (regimen) vigente: al final del mes se
+    # sabe en QUE comportamientos el bot gana y en cuales pierde, y el
+    # meta-modelo de-pondera trades de comportamientos que ya no suceden.
+    regime = None
+    try:
+        from bot.market_regime import current_regime_label
+        regime = current_regime_label()
+    except Exception:
+        pass
+
     # Guardar sin sizing — se asigna despues con asignar_capital()
     con = _conn()
     cur = con.execute("""
         INSERT INTO predictions
           (model, symbol, predicted_at, price_at_pred, gate_score, decision,
-           factors_json, stop_price, target_price, rr_ratio, max_hours)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           factors_json, stop_price, target_price, rr_ratio, max_hours, regime)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         model,
         symbol,
@@ -149,6 +160,7 @@ def predict(symbol, verbose=True, model="A", stop_price=None, target_price=None,
         target_price,
         rr,
         max_hours,
+        regime,
     ))
     pred_id = cur.lastrowid
     con.commit()
@@ -232,6 +244,10 @@ def check_outcomes(force_close=False):
                       Usado al vencer cada ronda en los tests de 1h.
     """
     from bot.crypto_models import MODELS
+
+    # Precios frescos: si el proceso lleva rato vivo (forever entre sesiones),
+    # el cache de crypto_data puede tener precios de minutos atras.
+    clear_cache()
 
     con = _conn()
     # Fix legacy NULL outcomes → PENDING

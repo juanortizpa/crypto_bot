@@ -98,6 +98,21 @@ def main():
         except Exception:
             pass
         try:
+            from bot.model_health import current_status
+            print(f"  Drift guard: {current_status()}")
+        except Exception:
+            pass
+        try:
+            from bot.market_regime import current_regime_label, today_status
+            lbl = current_regime_label()
+            stt = today_status()
+            if lbl:
+                print(f"  Regimen:     {lbl} [{stt}]")
+            else:
+                print(f"  Regimen:     sin clasificar (correr: python bot_crypto.py regime --fit)")
+        except Exception:
+            pass
+        try:
             from bot.maintenance import data_freshness
             print(f"  Datos:       {data_freshness()}")
         except Exception:
@@ -118,6 +133,16 @@ def main():
     elif cmd == "readiness":
         from bot.daily_report import readiness_report
         readiness_report()
+
+    elif cmd == "drift":
+        # Drift guard: ¿los modelos ML siguen prediciendo o el mercado cambio?
+        from bot.model_health import report as drift_report
+        print(drift_report())
+
+    elif cmd == "regime":
+        # Catalogo de comportamientos + clasificacion de HOY
+        from bot.market_regime import report as regime_report
+        print(regime_report(do_fit="--fit" in sys.argv))
 
     elif cmd == "risk":
         from bot.risk_guard import report as risk_report
@@ -512,6 +537,8 @@ def _help():
    readiness                     Veredicto: criterios para pasar a mainnet
    risk                          Estado del risk guard
    risk-reset [--force]          Resetea risk guard
+   drift                         Drift guard: ¿el ML sigue prediciendo o cambio el mercado?
+   regime [--fit]                Comportamiento del mercado hoy (catalogo de regimenes)
    events                        Eventos macro proximos
    llm <PAR>                     Analisis LLM (Claude) para un par
    ml <PAR>                      Inferencia ML standalone para un par

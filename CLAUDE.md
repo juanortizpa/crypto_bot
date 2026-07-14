@@ -25,7 +25,9 @@ Construir un bot de trading automatizado de criptomonedas que:
 bot/                        → Módulos principales (predicción, monitoreo)
 model_d_training/          → Pipeline de entrenamiento event-driven
 state/                     → Base de datos SQLite + modelos entrenados
-run_crypto_models.py       → Punto de entrada (CLI principal)
+bot_crypto.py              → Punto de entrada (CLI principal: run / forever / health)
+scripts/                   → Utilidades (today, reset_bot, wipe_all_data, datasets HF)
+docs/legacy/               → Documentacion historica (no operativa)
 .env                       → API keys Binance (NO subir a GitHub)
 ```
 
@@ -59,14 +61,14 @@ echo BINANCE_MODE=testnet >> .env
 
 ### 3. Ejecutar bot
 ```bash
-# Generar nuevas predicciones
-python run_crypto_models.py full
+# Una sesion (scan + predicciones + monitor, todo incluido)
+python bot_crypto.py run --dry-run
 
-# Monitorear en tiempo real (corre continuamente)
-python run_crypto_models.py monitor
+# Modo 24/7 (prueba de un mes)
+python bot_crypto.py forever --days 30 --dry-run
 
-# Validar datos
-python run_crypto_models.py validate
+# Salud del bot y frescura de datos
+python bot_crypto.py health
 ```
 
 ## 📊 Datos de Entrenamiento
@@ -166,19 +168,19 @@ def evaluate_condition(symbol):
 
 ### 2. Hacer Cambios
 - Edita solo archivos en `bot/` o `model_d_training/`
-- NO edites `run_crypto_models.py` a menos que sea necesario
+- NO edites `bot_crypto.py` a menos que sea necesario
 - Sigue convenciones de código arriba
 
 ### 3. Validar
 ```bash
-# Valida que datos están bien
-python run_crypto_models.py validate
+# Smoke tests (imports, contabilidad, guards, drift, regimenes)
+python smoke_test.py
 
-# Corre una predicción de prueba
-python run_crypto_models.py full
+# Corre una sesion corta de prueba (Ctrl+C despues de 5-10 min)
+python bot_crypto.py run --hours 1 --dry-run
 
-# Monitorea un ciclo (Ctrl+C después de 5-10 min)
-python run_crypto_models.py monitor
+# Salud del bot
+python bot_crypto.py health
 ```
 
 ## ⚠️ Errores Comunes
@@ -198,7 +200,7 @@ python run_crypto_models.py monitor
 ### "0 predicciones generadas"
 **Solución:** 
 - Verifica que el mercado no está totalmente bajista (gate muy rojo)
-- Corre `python run_crypto_models.py validate` para asegurar que baja datos
+- Corre `python bot_crypto.py health` para asegurar que baja datos
 - Revisa logs en `logs/` si existen
 
 ## 📈 Métricas para Monitorear
@@ -208,7 +210,7 @@ Después de 1-2 semanas de operación, verifica:
 ```
 Métrica              | Target   | Cómo Verificar
 ─────────────────────┼──────────┼─────────────────────────
-Win Rate Global      | >75%     | python run_crypto_models.py report
+Win Rate Global      | >75%     | python bot_crypto.py report
 Win Rate Modelo B    | >85%     | SELECT * FROM predictions WHERE model='B'
 Avg P&L Ganadores    | >2.5%    | BD: pnl_pct WHERE outcome='WIN'
 Avg P&L Perdedores   | >-2.5%   | BD: pnl_pct WHERE outcome='LOSS'
@@ -229,9 +231,10 @@ TARGET_PCT = 0.03  # +3.0%
 ```
 
 ### Ajustar Monitor Interval
-En `bot/predictions_realtime.py`:
-```python
-MONITOR_INTERVAL = 300  # segundos (5 minutos)
+Variables de entorno que lee `bot/runner.py` (en `.env` o el shell):
+```bash
+CRYPTO_MONITOR_INTERVAL_SEC=60   # segundos entre chequeos de posiciones
+CRYPTO_SCAN_INTERVAL_SEC=300     # segundos entre scans de candidatos
 ```
 
 ### Entrenar Nuevo Modelo
@@ -268,7 +271,7 @@ GROUP BY model ORDER BY wr_pct DESC;
 **SOLO DESPUÉS DE 2-3 SEMANAS DE VALIDACIÓN EN TESTNET**
 
 1. Cambiar `BINANCE_MODE=mainnet` en `.env`
-2. Cambiar `AUTO_EXECUTE=False` a `True` en `run_crypto_models.py` (inicialmente)
+2. Cambiar `AUTO_EXECUTE=False` a `True` en `.env` (inicialmente)
 3. Empezar con pequeño size de posición (ej: 1% del capital)
 4. Monitorear continuamente las primeras 2 semanas
 5. Aumentar posición gradualmente si win rate se mantiene
@@ -298,7 +301,7 @@ Detalles completos en [PLAN_24_7.md](PLAN_24_7.md).
 - [FUENTES_DE_DATOS.md](FUENTES_DE_DATOS.md) - De dónde vienen los datos
 - [MISMATCH_TRAINING_VS_PREDICCION.md](MISMATCH_TRAINING_VS_PREDICCION.md) - Por qué no expandir pares
 - [model_d_training/README.md](model_d_training/README.md) - Cómo entrenar modelos
-- [EJECUTAR_AHORA.txt](EJECUTAR_AHORA.txt) - Instrucciones paso a paso Windows
+- [docs/legacy/](docs/legacy/) - Documentacion historica (EJECUTAR_AHORA, planes de training antiguos)
 
 ## 💡 Mejoras Futuras (Roadmap)
 

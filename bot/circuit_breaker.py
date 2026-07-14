@@ -47,7 +47,7 @@ def check_circuit_breaker():
     Falla en abierto (no bloquea) si la BD no esta disponible.
     """
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = sqlite3.connect(DB_PATH, timeout=30)
         con.row_factory = sqlite3.Row
 
         # Regla 1: perdida acumulada rodante

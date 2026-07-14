@@ -50,26 +50,25 @@ crypto_bot/
 │   ├── crypto_models.py         # 6 modelos (A-F)
 │   ├── crypto_news.py           # Análisis de sentimiento
 │   ├── predictions.py           # Engine de predicciones
-│   ├── predictions_realtime.py  # Monitor real-time (5-min)
 │   ├── position_sizing.py       # Cálculo stop/target
 │   ├── top20_pairs.py           # Pares entrenados
 │   └── logger.py                # Logging centralizado
 │
-├── model_d_training/            # PIPELINE - Entrenamiento event-driven
-│   ├── step1_extract_event_features.py
-│   ├── step2_train_event_models.py
-│   ├── step3_walkforward_validation.py
-│   ├── step4_expand_event_windows.py
-│   ├── step5_train_final_models.py
-│   └── (+ scripts de análisis)
+├── model_d_training/            # PIPELINE - Entrenamiento del ensemble ML
+│   ├── download_data.py         # Klines 5m (incremental)
+│   ├── download_extended.py     # 1m + macro DXY/SP500/VIX + funding
+│   ├── features.py              # Features + labels (trainer grid)
+│   ├── features_extended.py     # Features del ensemble (compartidas con vivo)
+│   ├── train_grid/xgb/hybrid/full.py  # Trainers
+│   ├── compare.py               # Quality gate OOS (elige/deploya)
+│   └── results/                 # *_best.json + comparison.json
 │
-├── state/                       # PERSISTENCIA
-│   └── crypto_predictions.db    # SQLite: predicciones + outcomes
-│
-├── logs/                        # Ejecución (dinámico)
+├── scripts/                     # Utilidades (today, reset_bot, wipe, HF datasets)
+├── docs/legacy/                 # Documentación histórica (no operativa)
+├── state/                       # PERSISTENCIA (SQLite + estados JSON)
+├── logs/                        # Ejecución (dinámico, con rotación)
 │
 ├── bot_crypto.py                # ⭐ CLI PRINCIPAL (run, report, gate, ...)
-├── run_crypto_models.py         # Flujo alternativo (full + monitor)
 ├── smoke_test.py                # Verificación de fixes v1.1
 ├── binance_client.py            # Cliente Binance
 ├── .env                         # API keys (NO subir)
@@ -166,9 +165,8 @@ python bot_crypto.py risk       # estado del risk guard
 
 **Flujo alternativo (predicciones manuales + monitor separado):**
 ```bash
-python run_crypto_models.py full      # genera predicciones
-python run_crypto_models.py monitor   # monitor cada 5 min (Ctrl+C para parar)
-python run_crypto_models.py validate  # valida cobertura de datos
+python bot_crypto.py run --dry-run    # una sesion (scan + monitor incluidos)
+python bot_crypto.py health           # salud del bot y frescura de datos
 ```
 
 ## 📋 Uso Diario
@@ -286,7 +284,6 @@ El runner monitorea cada 1 min (modo `run`) o cada 5 min (`monitor`), con nivele
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Diagrama técnico + flujo de datos |
 | [CLAUDE.md](CLAUDE.md) | Guía para desarrolladores |
 | [FUENTES_DE_DATOS.md](FUENTES_DE_DATOS.md) | De dónde vienen los datos |
-| [EJECUTAR_AHORA.txt](EJECUTAR_AHORA.txt) | Instrucciones paso a paso |
 | [MISMATCH_TRAINING_VS_PREDICCION.md](MISMATCH_TRAINING_VS_PREDICCION.md) | Por qué no expandir pares |
 
 ## ⚠️ Limitaciones Conocidas
@@ -323,7 +320,7 @@ El runner monitorea cada 1 min (modo `run`) o cada 5 min (`monitor`), con nivele
 - Verifica BINANCE_API_KEY y BINANCE_API_SECRET en .env
 
 **Error: "0 predicciones generadas"**
-- Corre `python run_crypto_models.py validate` para verificar datos
+- Corre `python bot_crypto.py health` para verificar frescura de datos
 - Revisa que el mercado no esté totalmente bajista
 
 ## 📞 Contacto & Soporte
