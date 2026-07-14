@@ -104,7 +104,11 @@ def log(msg):
 # ── HTTP helper ───────────────────────────────────────────────────────────
 
 def http_json(url, max_retries=5, timeout=20, headers=None):
-    """Fetch JSON con reintentos exponenciales."""
+    """Fetch JSON con reintentos exponenciales.
+
+    Los errores 4xx (cliente: rango invalido, endpoint restringido, symbol
+    inexistente) NO se reintentan — un 400 no se arregla esperando, y con
+    5 retries x 20 pares el refresco diario perdia ~6 min solo en OI."""
     last_err = None
     for attempt in range(max_retries):
         try:
@@ -114,6 +118,14 @@ def http_json(url, max_retries=5, timeout=20, headers=None):
             req = urllib.request.Request(url, headers=h)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500:
+                raise RuntimeError(f"HTTP {e.code} (sin retry): {url[:80]}...")
+            last_err = e
+            wait = min(2 ** attempt, 30)
+            if attempt < max_retries - 1:
+                log(f"  ! retry {attempt+1}/{max_retries} en {wait}s ({e})")
+                time.sleep(wait)
         except Exception as e:
             last_err = e
             wait = min(2 ** attempt, 30)

@@ -46,20 +46,25 @@ usa y qué revisar tú.
    repite este refresco a diario en automático.
 5. **Entrenar el ensemble ML (Modelo D)** — los `.pkl` entrenados no viajan
    en GitHub: se generan en el propio portátil a partir de los datos del
-   paso 4. Es una sola vez, ~1-3 h de CPU (déjalo corriendo):
+   paso 4. Es una sola vez, ~1-3 h de CPU (déjalo corriendo). Usa SIEMPRE la
+   vía con red de seguridad:
    ```powershell
-   python -m model_d_training.features        # features + labels desde las velas
-   python -m model_d_training.train_grid      # Trainer A (grid)
-   python -m model_d_training.train_xgb       # Trainer B (XGBoost)
-   python -m model_d_training.train_hybrid    # Trainer C (híbrido)
-   python -m model_d_training.compare         # validación OOS y veredicto
+   python bot_crypto.py maintain ensemble
    ```
-   Revisa la salida de `compare`: el objetivo es WR > 55% y PF > 1.5
-   out-of-sample (GUIA_DIARIA §3B). Si sale `NO DEPLOYABLE` la prueba puede
-   arrancar igual — el ensemble solo filtra las entradas del modelo D y el
-   resto de modelos opera con el gate + meta-modelo — pero anótalo en tu
-   registro. Este paso regenera los thresholds de
-   `model_d_training/results/*_best.json` (sobrescribe los del repo).
+   `maintain ensemble` respalda los artefactos actuales, corre el pipeline
+   completo (features → grid → xgb → hybrid → RF → compare) y SOLO adopta el
+   resultado si `compare` lo marca deployable out-of-sample (WR > 55%,
+   PF > 1.5 — GUIA_DIARIA §3B); si no, **restaura los artefactos anteriores**.
+   Veredictos: `ADOPTED` | `REJECTED_RESTORED` | `FAILED_RESTORED`.
+
+   Si sale `REJECTED` la prueba puede arrancar igual — el ensemble solo
+   filtra las entradas del modelo D y el resto de modelos opera con el gate +
+   meta-modelo — pero anótalo en tu registro.
+
+   > Nota: correr los trainers a mano (`python -m model_d_training.features`,
+   > `train_grid`, `train_xgb`, `train_hybrid`, `compare`) sirve para depurar,
+   > pero NO tiene quality gate: sobrescribe los `*_best.json` y `.pkl`
+   > aunque el modelo nuevo sea peor. Evítalo salvo diagnóstico.
 6. **meta_model y exit_model**: no hay que hacer nada — arrancan en modo
    neutro (P(WIN)=0.5) y `forever` los entrena automáticamente cuando el
    propio mes acumule los mínimos (80 trades / 100 snapshots post-fix).

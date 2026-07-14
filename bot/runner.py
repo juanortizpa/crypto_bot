@@ -114,7 +114,7 @@ def _close_position(con, pred_id: int, reason: str, current_price: float):
 def _monitor_open_positions(force_close_all: bool = False):
     """Itera todas las posiciones abiertas, graba snapshot, evalua salida."""
     from bot.crypto_data import get_price, clear_cache
-    from bot.trade_monitor import record_snapshot, DB_PATH
+    from bot.trade_monitor import record_snapshot
 
     # FIX CRÍTICO: el cache de crypto_data solo lo limpiaba scan() (cada 5 min
     # y SOLO si la sesion permite abrir trades). En FREEZE o con risk guard
@@ -122,8 +122,10 @@ def _monitor_open_positions(force_close_all: bool = False):
     # exactamente cuando mas importa cerrar bien. Limpiar SIEMPRE aqui.
     clear_cache()
 
-    con = sqlite3.connect(DB_PATH, timeout=30)
-    con.row_factory = sqlite3.Row
+    # predictions._conn() crea el schema si falta: en un clon fresco la DB
+    # no existe y un connect crudo + SELECT crashea con "no such table".
+    from bot.predictions import _conn as _pred_conn
+    con = _pred_conn()
     rows = con.execute(
         "SELECT * FROM predictions WHERE outcome='PENDING'"
     ).fetchall()
@@ -572,6 +574,14 @@ def run(max_hours: float = None, dry_run: bool = None):
 
     sm = SessionManager.start(max_hours=max_hours)
     print(sm.report())
+
+    # Clon fresco: crear el schema de la DB antes de que cualquier consulta
+    # (monitor, balance simulado, circuit breaker) toque la tabla predictions.
+    try:
+        from bot.predictions import _conn as _ensure_schema
+        _ensure_schema().close()
+    except Exception as e:
+        log("WARN", f"No se pudo inicializar el schema de la DB: {e}")
 
     # Inicializar risk_guard con el balance actual
     # Binance testnet suele devolver 0 USDT — fallback al estado guardado o .env

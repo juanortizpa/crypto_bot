@@ -182,6 +182,16 @@ def t_regime_math():
     assert len(set(labels[:80])) == 1 and len(set(labels[80:])) == 1, \
         "kmeans debe separar dos nubes obvias"
 
+def t_fresh_clone_schema():
+    """En un clon fresco la DB no existe: el runner debe crear el schema
+    (crash real en el primer arranque del portatil, 2026-07-14)."""
+    import inspect
+    from bot import runner
+    assert "_pred_conn" in inspect.getsource(runner._monitor_open_positions), \
+        "_monitor_open_positions debe usar predictions._conn (crea schema)"
+    assert "_ensure_schema" in inspect.getsource(runner.run), \
+        "runner.run debe asegurar el schema al arrancar"
+
 def t_regime_wired():
     import inspect
     from bot import runner, forever, meta_model, predictions
@@ -238,6 +248,7 @@ if __name__ == "__main__":
     check("drift guard: cableado en runner/forever/ml", t_drift_guard_wired)
     check("regimenes: kmeans separa comportamientos", t_regime_math)
     check("regimenes: cableado en runner/forever/meta/predict", t_regime_wired)
+    check("clon fresco: runner crea schema de la DB", t_fresh_clone_schema)
     if network:
         check("short_signal en vivo (BTCUSDT)", t_short_signal_live)
         check("_path_outcome en vivo (BTCUSDT)", t_path_outcome_live)
