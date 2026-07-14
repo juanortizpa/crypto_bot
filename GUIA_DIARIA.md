@@ -64,8 +64,8 @@ Corre en este orden:
 
 ```bash
 python bot_crypto.py outcomes        # 1. resuelve pendientes al precio actual
-python today.py                      # 2. trades de HOY (WR, P&L neto)
-python run_crypto_models.py report   # 3. WR + expectativa por modelo
+python scripts/today.py              # 2. trades de HOY (WR, P&L neto)
+python bot_crypto.py report          # 3. WR + expectativa por modelo
 python bot_crypto.py ml-eval         # 4. etiqueta retrospectiva de cada decisión ML
 python bot_crypto.py ml-report       # 5. calidad de las decisiones ML
 ```
@@ -88,7 +88,7 @@ python bot_crypto.py ml-report       # 5. calidad de las decisiones ML
 - `MISSED_WIN` — ganadores que vetó de más. Si crece mucho, los thresholds quedaron
   demasiado estrictos.
 
-**`today.py`** — foto del día: wins, losses, P&L neto en USD.
+**`scripts/today.py`** — foto del día: wins, losses, P&L neto en USD.
 
 ### Anota cada día (lleva un registro simple)
 Fecha · nº trades · WR% · Exp · P&L neto · Entry accuracy · BAD_GO · MISSED_WIN.
@@ -144,7 +144,7 @@ python -m model_d_training.live_runner --dry-run --once   # 5. verificación
 
 ```
 Mañana:   status → risk → fear → run --dry-run   (déjalo corriendo)
-Noche:    outcomes → today.py → report → ml-eval → ml-report
+Noche:    outcomes → scripts/today.py → report → ml-eval → ml-report
 Semanal:  revisar tendencia anotada; ajustar thresholds si hace falta
 Mensual:  reentrenar ensemble D (pipeline offline) si el régimen cambió
 ```

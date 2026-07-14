@@ -154,3 +154,4 @@ state/*.db.*
 .claude/
 state/model_health.json
 state/regime_reference.json
+model_d_training/results/backup_*/

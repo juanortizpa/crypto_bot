@@ -64,7 +64,6 @@ crypto_bot/
 │   ├── crypto_news.py            # Análisis de sentimiento de noticias (Google RSS)
 │   ├── crypto_scanner.py         # Escaneo de pares
 │   ├── predictions.py            # Engine de predicciones + BD SQLite
-│   ├── predictions_realtime.py   # Monitor en tiempo real (5-min checks)
 │   ├── position_sizing.py        # Cálculo de posición y stop/target
 │   ├── sentiment.py              # Análisis de sentimiento avanzado
 │   ├── logger.py                 # Logging centralizado
@@ -91,7 +90,7 @@ crypto_bot/
 ├── logs/                         # EJECUCIÓN - Logs de runs
 │   └── .gitkeep
 │
-├── run_crypto_models.py          # ⭐ PUNTO DE ENTRADA principal
+├── bot_crypto.py                 # ⭐ PUNTO DE ENTRADA principal (run / forever)
 ├── bot_crypto.py                 # CLI: análisis manual de pares
 │
 ├── .env                          # ⚙️ Configuración (API keys Binance)
@@ -125,7 +124,7 @@ Modelos guardados: models_D_xgb.pkl
 ### 2️⃣ **Predicción (Daily - cada mañana a las 9:00 AM)**
 
 ```
-python run_crypto_models.py full
+python bot_crypto.py run --dry-run
         ↓
 ┌─────────────────────────────────┐
 │ 1. Obtiene OHLCV de Binance     │  ← Binance API
@@ -171,7 +170,7 @@ Nuevas predicciones listas para monitoreo
 ### 3️⃣ **Monitoreo Real-Time (Cada 5 minutos - 24/7)**
 
 ```
-python run_crypto_models.py monitor
+python bot_crypto.py run   # monitor incluido en la sesion
         ↓
 ┌─────────────────────────────────┐
 │ Cada 5 minutos:                 │
@@ -271,14 +270,13 @@ CREATE TABLE predictions (
 
 ## 🚀 Puntos de Entrada Principales
 
-### `run_crypto_models.py` - CLI principal
+### `bot_crypto.py` - CLI principal
 ```bash
-python run_crypto_models.py full         # Genera predicciones nuevas
-python run_crypto_models.py monitor      # Monitorea en tiempo real (5-min checks)
-python run_crypto_models.py outcomes     # Resuelve predicciones vencidas
-python run_crypto_models.py validate     # Valida cobertura de datos
-python run_crypto_models.py report       # Genera reporte de performance
-python run_crypto_models.py compare      # Compara modelos
+python bot_crypto.py run --dry-run         # Genera predicciones nuevas
+python bot_crypto.py outcomes            # Resuelve predicciones vencidas
+python bot_crypto.py health              # Salud del bot + frescura de datos
+python bot_crypto.py report              # Reporte de performance
+python bot_crypto.py compare             # Compara modelos
 ```
 
 ### `bot_crypto.py` - Análisis manual
@@ -318,10 +316,10 @@ CRYPTO_DB_PATH=state/crypto_predictions.db
 ## 🔄 Ciclo Diario de Operación
 
 ```
-09:00 AM    ├─ python run_crypto_models.py full
+09:00 AM    ├─ python bot_crypto.py run --dry-run
             │  └─ Genera nuevas predicciones
             │
-09:05 AM    └─ python run_crypto_models.py monitor
+09:05 AM    └─ python bot_crypto.py run   # monitor incluido en la sesion
                └─ Inicia monitoreo (corre continuamente cada 5 min)
                   ├─ Check #1 → Sin cambios
                   ├─ Check #2 → Sin cambios
@@ -360,6 +358,6 @@ CRYPTO_DB_PATH=state/crypto_predictions.db
 ## 📞 Referencias
 
 - **Documentación de usuario:** [README.md](README.md)
-- **Guía de ejecución:** [EJECUTAR_AHORA.txt](EJECUTAR_AHORA.txt)
+- **Guía de ejecución:** [PLAN_24_7.md](PLAN_24_7.md)
 - **Fuentes de datos:** [FUENTES_DE_DATOS.md](FUENTES_DE_DATOS.md)
 - **Training pipeline:** [model_d_training/README.md](model_d_training/README.md)

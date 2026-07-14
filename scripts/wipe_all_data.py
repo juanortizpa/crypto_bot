@@ -11,7 +11,7 @@ Uso:
 """
 import os, sqlite3, json
 
-ROOT = os.path.dirname(__file__)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = os.path.join(ROOT, "state")
 
 print("=" * 55)

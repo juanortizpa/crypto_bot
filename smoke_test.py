@@ -24,7 +24,6 @@ def check(name, fn):
 # ── 1. Imports de todos los modulos tocados ──────────────────────────────
 def t_imports():
     import bot.predictions
-    import bot.predictions_realtime
     import bot.crypto_gate
     import bot.crypto_models
     import bot.short_signal
@@ -82,13 +81,6 @@ def t_ml_guard():
         assert (m.get("trained_at") or "")[:10] >= ACCOUNTING_FIX_DATE
     if e is not None:
         assert (e.get("trained_at") or "")[:10] >= ACCOUNTING_FIX_DATE
-
-# ── 8. Monitor importa clear_cache (fix precios congelados) ──────────────
-def t_monitor_cache():
-    import inspect
-    import bot.predictions_realtime as prt
-    src = inspect.getsource(prt.monitor_positions_realtime)
-    assert "clear_cache()" in src, "el monitor debe limpiar cache por ciclo"
 
 # ── 9. short_signal estructura ───────────────────────────────────────────
 def t_short_signal_offline():
@@ -232,7 +224,6 @@ if __name__ == "__main__":
     check("circuit breaker operativo", t_breaker)
     check("contabilidad fee-aware (FEE_RT_PCT, path)", t_fee_const)
     check("guard de modelos ML contaminados", t_ml_guard)
-    check("monitor limpia cache por ciclo", t_monitor_cache)
     check("short_signal estructura", t_short_signal_offline)
     check("runner: monitor limpia cache", t_runner_monitor_cache)
     check("runner: cierres fee-aware", t_runner_fee_aware)
