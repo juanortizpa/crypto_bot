@@ -266,6 +266,25 @@ def _monitor_only_cycle(seconds: float = 300):
 def _run_maintenance(st: dict):
     from bot import maintenance
 
+    # Drift guard: chequeo diario. Si el ensemble esta DEGRADED (dejo de
+    # predecir), adelantar el retrain — con freno de 3 dias para no
+    # reentrenar en bucle si el retrain sale rechazado por el quality gate.
+    if _due(st, "last_drift_check", 1.0):
+        try:
+            from bot.model_health import evaluate as drift_evaluate
+            res = drift_evaluate()
+            log("INFO", f"forever: drift guard -> {res['status']}")
+            if res["status"] == "DEGRADED" and _due(st, "last_drift_forced_retrain", 3.0):
+                st["last_ensemble_retrain"] = (
+                    datetime.now() - timedelta(days=ENSEMBLE_RETRAIN_DAYS)
+                ).isoformat()
+                _mark(st, "last_drift_forced_retrain")
+                log("WARN", "forever: drift guard DEGRADED — retrain del "
+                            "ensemble adelantado (quality gate OOS decidira)")
+        except Exception as e:
+            log("WARN", f"forever: drift guard fallo (no fatal): {e}")
+        _mark(st, "last_drift_check")
+
     if _due(st, "last_backup", BACKUP_DAYS):
         beat("MAINT_BACKUP")
         maintenance.backup_databases()

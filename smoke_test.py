@@ -157,6 +157,27 @@ def t_ensemble_quality_gate():
     assert "deployable" in src and "_restore_results" in src, \
         "retrain_ensemble debe tener quality gate con restore"
 
+# ── Drift guard (model_health) ───────────────────────────────────────────
+def t_drift_guard_math():
+    from bot.model_health import _psi, _binom_tail_p
+    # PSI ~0 con la misma distribucion; alto con distribuciones distintas
+    same = list(range(100))
+    assert _psi(same, same) < 0.01
+    assert _psi(same, [x + 80 for x in same]) > 0.25
+    # Binomial: 4 wins de 20 con p0=0.55 es muy improbable
+    assert _binom_tail_p(20, 4, 0.55) < 0.01
+    assert _binom_tail_p(20, 12, 0.55) > 0.2
+
+def t_drift_guard_wired():
+    import inspect
+    from bot import runner, forever, ml_inference
+    assert "is_ml_trusted" in inspect.getsource(runner._run_scan_cycle), \
+        "runner debe consultar el drift guard antes de abrir Modelo D"
+    assert "drift_evaluate" in inspect.getsource(forever._run_maintenance), \
+        "forever debe evaluar drift a diario"
+    assert "record_features" in inspect.getsource(ml_inference.predict), \
+        "ml_inference debe alimentar el drift guard"
+
 
 # ── Network checks (opcionales) ──────────────────────────────────────────
 def t_short_signal_live():
@@ -196,6 +217,8 @@ if __name__ == "__main__":
     check("24/7: retrain solo con trades post-fix", t_training_data_post_fix)
     check("24/7: logger con rotacion", t_logger_rotation)
     check("24/7: quality gate del ensemble", t_ensemble_quality_gate)
+    check("drift guard: PSI y test binomial", t_drift_guard_math)
+    check("drift guard: cableado en runner/forever/ml", t_drift_guard_wired)
     if network:
         check("short_signal en vivo (BTCUSDT)", t_short_signal_live)
         check("_path_outcome en vivo (BTCUSDT)", t_path_outcome_live)

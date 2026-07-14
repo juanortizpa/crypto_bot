@@ -175,7 +175,7 @@ def _ml_quality(day_iso: str = None) -> dict:
 
 
 def _guards_status() -> dict:
-    out = {"risk_guard": "?", "circuit_breaker": "?"}
+    out = {"risk_guard": "?", "circuit_breaker": "?", "model_health": "?"}
     try:
         from bot.risk_guard import is_tripped, trip_reason
         out["risk_guard"] = f"TRIPPED ({trip_reason()})" if is_tripped() else "OK"
@@ -187,6 +187,11 @@ def _guards_status() -> dict:
         out["circuit_breaker"] = f"BLOCKED ({reason})" if blocked else "OK"
     except Exception as e:
         out["circuit_breaker"] = f"error: {e}"
+    try:
+        from bot.model_health import status_line
+        out["model_health"] = status_line()
+    except Exception as e:
+        out["model_health"] = f"error: {e}"
     return out
 
 
@@ -265,6 +270,7 @@ def generate_daily_report(day_iso: str = None) -> str:
     a("")
     a(f"- Risk guard: {guards['risk_guard']}")
     a(f"- Circuit breaker: {guards['circuit_breaker']}")
+    a(f"- Drift guard (ML): {guards['model_health']}")
     a(f"- Posiciones abiertas: {len(open_pos)}"
       + (f" ({', '.join(r['symbol'] for r in open_pos)})" if open_pos else ""))
     if freshness:

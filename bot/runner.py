@@ -393,6 +393,17 @@ def _run_scan_cycle(session_start_iso: str = None):
                 _allow_unknown = os.environ.get(
                     "CRYPTO_ALLOW_ML_UNKNOWN", "").lower() in ("1", "true", "yes")
                 if chosen_model == "D":
+                    # Drift guard: si hay evidencia de que el ensemble dejo de
+                    # predecir (concept drift), su opinion no vale — no abrir
+                    # dips hasta que un retrain con quality gate lo recupere.
+                    try:
+                        from bot.model_health import is_ml_trusted
+                        if not is_ml_trusted():
+                            log("WARN", f"  {sym}: [D] drift guard DEGRADED — "
+                                        f"ensemble no confiable, skip dip")
+                            continue
+                    except Exception:
+                        pass
                     if ml_decision == "UNKNOWN" and not _allow_unknown:
                         log("INFO", f"  {sym}: [D] ML UNKNOWN -> skip (capital protegido)")
                         continue

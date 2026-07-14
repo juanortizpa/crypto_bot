@@ -372,6 +372,13 @@ def predict(symbol):
     if feats is None:
         return {"decision": "UNKNOWN", "reason": "features no disponibles"}
 
+    # Alimentar el drift guard con lo que el ML esta viendo (best-effort)
+    try:
+        from bot.model_health import record_features
+        record_features(symbol, feats)
+    except Exception:
+        pass
+
     details = {}
     votes = 0
     total = 0
