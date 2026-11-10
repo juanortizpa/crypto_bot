@@ -38,6 +38,10 @@ ENV = {
 # URLs segun modo
 TESTNET_URL = "https://testnet.binance.vision"
 LIVE_URL    = "https://api.binance.com"
+# Datos publicos de mercado (velas, precios). api.binance.com rechaza IPs de
+# EE.UU. (HTTP 451), que es donde corren GitHub Actions y muchos servidores
+# gratuitos; data-api.binance.vision sirve los mismos datos sin esa restriccion.
+PUBLIC_URL  = os.getenv("BINANCE_PUBLIC_URL", LIVE_URL)
 
 def _base_url():
     return TESTNET_URL if ENV["BINANCE_MODE"] == "testnet" else LIVE_URL
@@ -88,7 +92,7 @@ def _request(method, path, params=None, signed=False, force_live=False, _retry=T
         params.setdefault("recvWindow", 10000)
         params["signature"] = _sign(params)
 
-    base = LIVE_URL if force_live else _base_url()
+    base = PUBLIC_URL if force_live else _base_url()
     url = f"{base}{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)

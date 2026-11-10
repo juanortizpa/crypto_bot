@@ -1,0 +1,84 @@
+# Prueba 24/7 GRATIS de la estrategia de rotacion en modo simulacion (paper).
+#
+# La estrategia decide una vez al dia, tras el cierre diario de Binance
+# (00:00 UTC), asi que no hace falta un servidor encendido: basta con un
+# ciclo diario. El estado de la cartera simulada y los reportes se guardan
+# en la rama `paper-state` de este mismo repo.
+#
+# NO envia ordenes: no usa claves de Binance ni --execute.
+name: Rotacion (paper)
+
+on:
+  schedule:
+    - cron: "10 0 * * *"    # 00:10 UTC  (19:10 hora Colombia)
+    - cron: "10 6 * * *"    # reintento por si el primero se retraso o fallo
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rotation-paper
+  cancel-in-progress: false
+
+jobs:
+  ciclo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BINANCE_PUBLIC_URL: https://data-api.binance.vision
+      AUTO_EXECUTE: "False"
+      ROT_CAPITAL: ${{ vars.ROT_CAPITAL || '1000' }}
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-rotation.txt
+
+      - run: pip install -r requirements-rotation.txt
+
+      - name: Restaurar estado de la cartera simulada
+        run: |
+          mkdir -p state reports
+          if git fetch origin paper-state --depth 1 2>/dev/null; then
+            git show FETCH_HEAD:rotation_state.json   > state/rotation_state.json     || rm -f state/rotation_state.json
+            git show FETCH_HEAD:rotation_trades.csv   > reports/rotation_trades.csv   || rm -f reports/rotation_trades.csv
+            git show FETCH_HEAD:rotation_equity.csv   > reports/rotation_equity.csv   || rm -f reports/rotation_equity.csv
+          else
+            echo "Primera ejecucion: se crea la cartera con ROT_CAPITAL"
+          fi
+
+      - name: Ciclo diario (simulacion)
+        run: python bot_crypto.py rotation once | tee salida.txt
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat salida.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar estado en la rama paper-state
+        run: |
+          tmp="$(mktemp -d)"
+          cp state/rotation_state.json "$tmp/"
+          cp reports/rotation_equity.csv "$tmp/" 2>/dev/null || true
+          cp reports/rotation_trades.csv "$tmp/" 2>/dev/null || true
+          cp salida.txt "$tmp/ultimo_ciclo.txt"
+          git config user.name  "rotation-bot"
+          git config user.email "rotation-bot@users.noreply.github.com"
+          if git rev-parse --verify -q FETCH_HEAD >/dev/null && git ls-remote --exit-code origin paper-state >/dev/null; then
+            git checkout -q -B paper-state FETCH_HEAD
+          else
+            git checkout -q --orphan paper-state
+            git rm -rfq . || true
+          fi
+          cp "$tmp"/* .
+          git add rotation_state.json ultimo_ciclo.txt
+          git add rotation_equity.csv rotation_trades.csv 2>/dev/null || true
+          git commit -qm "paper: ciclo $(date -u +%F)" || echo "sin cambios"
+          git push -q origin paper-state

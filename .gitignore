@@ -155,3 +155,6 @@ state/*.db.*
 state/model_health.json
 state/regime_reference.json
 model_d_training/results/backup_*/
+
+# Datos historicos del backtest
+backtest/data/
