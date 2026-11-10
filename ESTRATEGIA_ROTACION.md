@@ -54,7 +54,7 @@ pero la ganancia media es 2.4-3.2 veces la pérdida media.
 - Sin las monedas añadidas más tarde (APT, SUI, ARB, OP, INJ, SHIB): +21.8%.
 - El ejecutor simulado del bot, reproducido día a día sobre 2023-2026, da el
   mismo resultado que el backtest.
-- `python -m backtest.test_backtest` verifica que no hay look-ahead.
+- `python -m backtest.check_backtest` verifica que no hay look-ahead.
 
 ## Lo que NO promete
 
