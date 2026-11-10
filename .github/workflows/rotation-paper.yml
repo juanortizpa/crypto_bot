@@ -78,7 +78,8 @@ jobs:
             git rm -rfq . || true
           fi
           cp "$tmp"/* .
-          git add rotation_state.json ultimo_ciclo.txt
-          git add rotation_equity.csv rotation_trades.csv 2>/dev/null || true
+          for f in rotation_state.json ultimo_ciclo.txt rotation_equity.csv rotation_trades.csv; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
           git commit -qm "paper: ciclo $(date -u +%F)" || echo "sin cambios"
           git push -q origin paper-state
