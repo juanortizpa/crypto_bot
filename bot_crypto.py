@@ -512,6 +512,11 @@ def main():
             print(f"  → CODICIA EXTREMA — considerar tomar ganancias")
         print()
 
+    elif cmd == "rotation":
+        # Estrategia de rotacion por momentum (la validada en backtest).
+        from bot.rotation import cli as rotation_cli
+        rotation_cli(sys.argv[2:])
+
     elif cmd in ("help", "-h", "--help"):
         _help()
 
@@ -527,6 +532,9 @@ def _help():
   ============================================================
               CRYPTO TRADING BOT -- CLI
   ============================================================
+   rotation status|signal|once|run|backtest|reset [--execute]
+                                 ESTRATEGIA RECOMENDADA: rotacion semanal por momentum
+                                 con filtro de regimen BTC. Ver ESTRATEGIA_ROTACION.md
    run [--hours N] [--dry-run]   Loop principal (max 12h real / 17h dry-run)
    forever [--days N] [--dry-run|--live]
                                  Modo 24/7: sesiones encadenadas + mantenimiento
