@@ -1,0 +1,8 @@
+[2026-11-10 01:36:29] [INFO ]   [ROT] asof=2026-11-09 regimen=OFF (BTC 75368 vs MA100 77472) objetivo=USDT 100% equity=$1000.00 dd=0.0%
+[2026-11-10 01:36:29] [INFO ]   [ROT] objetivo sin cambios — no se opera
+
+  ROTACION — estado (activo)
+  Capital inicial: $1000.00   Equity: $1000.00   P&L: +0.00%   DD desde pico: 0.0%
+  USDT: $1000.00   Ultimo cierre procesado: 2026-11-09
+    (sin posiciones: 100% USDT)
+

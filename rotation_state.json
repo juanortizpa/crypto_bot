@@ -1,0 +1,11 @@
+{
+  "cash": 1000.0,
+  "holdings": {},
+  "peak_equity": 1000.0,
+  "initial_capital": 1000.0,
+  "halted": false,
+  "halt_reason": null,
+  "last_target": {},
+  "last_asof": "2026-11-09",
+  "started": "2026-11-10T01:35:12.308793+00:00"
+}
