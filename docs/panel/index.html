@@ -207,8 +207,8 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-si
     <div class="steps" style="margin-top:16px">
       <div class="step" id="st1"><h3>Crea una clave de API en Binance</h3>
         <ol><li>Entra a Binance → tu perfil → <b>Gestión de API</b>.</li><li>Crea una clave <b>generada por el sistema</b> y ponle un nombre, por ejemplo <span class="mono">bot-rotacion</span>.</li>
-          <li>En <b>Editar restricciones</b> activa <b>Habilitar trading Spot y Margin</b>.</li><li>Deja <b>desactivado</b> «Habilitar retiros». Así la clave puede comprar y vender, pero nunca sacar dinero.</li>
-          <li>Deja el acceso por IP sin restringir: la IP de tu celular cambia.</li>
+          <li>Por ahora deja <b>solo «Habilitar lectura»</b> y el acceso por IP sin restringir. El trading lo activas en el paso 4, cuando ya conozcas tu IP: Binance borra cualquier clave con trading que no esté restringida a IP de confianza.</li>
+          <li>Deja <b>desactivado</b> «Habilitar retiros», ahora y después. Así la clave puede comprar y vender, pero nunca sacar dinero.</li>
           <li>Copia la <b>API Key</b> y la <b>Secret Key</b>. La secreta solo se muestra una vez.</li></ol>
         <a class="btn" target="_blank" rel="noopener" href="https://www.binance.com/es/my/settings/api-management">Abrir Gestión de API en Binance</a></div>
       <div class="step" id="st2"><h3>Crea un token de GitHub para el panel</h3>
@@ -226,7 +226,12 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-si
         <p style="margin-top:10px;color:var(--mute);font-size:14px">El celular revisa la orden cada 3 horas y opera una sola vez por día. Si está apagado o sin internet, lo hace en la siguiente revisión. Con menos de unos 150 USDT varias órdenes quedan por debajo del mínimo de Binance.</p>
         <a class="btn" target="_blank" rel="noopener" href="https://f-droid.org/es/packages/com.termux/">Termux en F-Droid</a></div>
       <div class="step" id="st4"><h3>Prueba la conexión</h3>
-        <p>En Termux escribe <span class="mono">bot prueba</span>. Solo lee tu cuenta, no envía órdenes, y en segundos el resultado aparece aquí.</p>
+<p><b>Primero, tu IP.</b> Binance solo deja operar con trading desde las IP que anotes en la clave. Con el celular conectado al WiFi desde el que va a operar (por ejemplo el de tu casa), escribe en Termux:</p>
+        <button class="copy" data-copy="bot ip">bot ip <small>copiar</small></button>
+        <ol><li>Copia la IP que te muestra.</li><li>En Binance, edita la clave: marca <b>Restringir acceso a IP de confianza</b>, pega la IP y pulsa Confirmar.</li>
+          <li>Ahora sí activa <b>Habilitar trading Spot y Margin</b>, con los retiros desactivados, y guarda.</li></ol>
+        <div class="note">El celular solo opera mientras esté en esa red. Si cambia tu IP (reinicias el router, o el celular usa datos móviles), las órdenes fallarán, este panel mostrará el error y tendrás que actualizar la IP con <span class="mono">bot ip</span>. La IP de los datos móviles suele cambiar todo el tiempo y no sirve.</div>
+        <p style="margin-top:12px"><b>Después, la prueba.</b> Escribe <span class="mono">bot prueba</span>. Solo lee tu cuenta, no envía órdenes, y en segundos el resultado aparece aquí.</p>
         <button class="copy" data-copy="bot prueba">bot prueba <small>copiar</small></button>
         <div class="checks" id="con-checks"><div class="chk"><i>·</i><div>Todavía no se ha ejecutado la prueba desde el celular.</div></div></div></div>
       <div class="step" id="st5"><h3>Enciende el modo real</h3>
