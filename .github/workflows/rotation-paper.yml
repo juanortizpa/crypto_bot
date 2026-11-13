@@ -5,9 +5,10 @@
 # datos del panel web (docs/panel) se guardan en la rama `paper-state`.
 #
 # - Simulacion: corre siempre. No usa claves ni envia ordenes.
-# - Dinero real: SOLO si la variable ROT_MODE vale `live` y existen los
-#   secretos BINANCE_API_KEY / BINANCE_API_SECRET. Apagado por defecto.
-#   ROT_MODE=salir vende todo a USDT y detiene el bot real.
+# - Dinero real: Binance rechaza los servidores de GitHub (estan en EE.UU.),
+#   asi que aqui solo se publica la DECISION en `orden.json`. Las ordenes las
+#   envia `ejecutor/ejecutor.py` desde el celular del usuario, y solo si la
+#   variable del repositorio ROT_MODE vale `live` (o `salir` para vender todo).
 name: Rotacion (ciclo diario)
 
 on:
@@ -44,54 +45,20 @@ jobs:
       - name: Restaurar estado
         run: bash scripts/estado_panel.sh restaurar
 
-      - name: Simulacion (sin ordenes reales)
+      - name: Simulacion y orden del dia (sin ordenes reales)
         env:
           ROT_MODE: paper
           AUTO_EXECUTE: "False"
           ROT_CAPITAL: ${{ vars.ROT_CAPITAL || '1000' }}
+          ROT_MODO_REAL: ${{ vars.ROT_MODE || 'paper' }}
         run: |
           python bot_crypto.py rotation once | tee reports/ultimo_ciclo.txt
           python bot_crypto.py rotation dashboard
 
-      - name: Dinero real (solo si ROT_MODE es live o salir)
-        if: ${{ vars.ROT_MODE == 'live' || vars.ROT_MODE == 'salir' }}
-        continue-on-error: true
-        env:
-          ROT_MODE: live
-          BINANCE_MODE: live
-          AUTO_EXECUTE: "True"
-          ROT_LIQUIDAR: ${{ vars.ROT_MODE == 'salir' && 'si' || 'no' }}
-          ROT_CAPITAL: ${{ vars.ROT_CAPITAL_REAL }}
-          ROT_MOSTRAR_MONTOS: ${{ vars.ROT_MOSTRAR_MONTOS }}
-          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
-          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
-        run: |
-          set -o pipefail
-          if [ -z "$BINANCE_API_KEY" ] || [ -z "$BINANCE_API_SECRET" ] || [ -z "$ROT_CAPITAL" ]; then
-            echo "Modo real pedido pero faltan secretos o ROT_CAPITAL_REAL: no se opera." | tee reports/ultimo_ciclo_live.txt
-            exit 1
-          fi
-          python bot_crypto.py rotation once --execute | tee reports/ultimo_ciclo_live.txt
-          python bot_crypto.py rotation dashboard
-
-      - name: Comprobar acceso a Binance para operar (solo lectura)
-        if: always()
-        continue-on-error: true
-        env:
-          BINANCE_MODE: live
-          ROT_MODE: live
-          ROT_CAPITAL: ${{ vars.ROT_CAPITAL_REAL || '0' }}
-          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
-          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
-        run: python bot_crypto.py rotation conexion
-
       - name: Resumen
         if: always()
         run: |
-          for f in reports/ultimo_ciclo.txt reports/ultimo_ciclo_live.txt; do
-            [ -f "$f" ] || continue
-            { echo "### $f"; echo '```'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          done
+          { echo '```'; cat reports/ultimo_ciclo.txt 2>/dev/null; echo; cat reports/orden.json 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Guardar estado en la rama paper-state
         if: always()

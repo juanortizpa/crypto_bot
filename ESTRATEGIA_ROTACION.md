@@ -116,3 +116,18 @@ Actions a las 00:10 UTC (19:10 Colombia), gratis en un repo público.
 Para órdenes reales GitHub Actions no sirve (IP de EE.UU. bloqueada por
 Binance y no conviene guardar claves ahí): eso requiere una VM fuera de
 EE.UU., p. ej. Oracle Cloud Always Free (ver DEPLOY_GRATIS.md).
+
+## Panel web y dinero real (2026-11-12)
+
+- **Panel:** https://juanortizpa.github.io/crypto_bot/panel/ (GitHub Pages, gratis).
+  Lee de la rama `paper-state` lo que publica el ciclo diario.
+- **Dinero real:** Binance responde HTTP 451 a los servidores de GitHub
+  Actions (están en EE.UU.), así que GitHub no puede enviar órdenes. El ciclo
+  diario publica la decisión en `orden.json` y el programa
+  `ejecutor/ejecutor.py`, instalado en el celular Android del usuario (Termux),
+  la ejecuta desde Colombia y publica su resultado en `live.json`.
+  - Instalación: `curl -sL https://raw.githubusercontent.com/juanortizpa/crypto_bot/main/ejecutor/instalar.sh | bash`
+  - Claves de Binance y token de GitHub: solo en el celular (`~/.bot_rotacion/config.json`, permisos 600).
+  - Control desde GitHub con la variable `ROT_MODE`: `paper` (apagado), `live`, `salir` (vende todo y se detiene).
+  - El celular revisa cada 3 h y ejecuta una sola vez cada orden; rechaza órdenes
+    de más de 3 días o con pesos fuera de las reglas.

@@ -7,6 +7,12 @@ Datos para el panel web de la estrategia ROTACION y prueba de conexion con Binan
 El panel (docs/panel/index.html) es una pagina estatica: lee estos JSON desde
 la rama `paper-state` del repositorio, donde los guarda el workflow diario.
 
+Dinero real: Binance rechaza los servidores de GitHub (HTTP 451, estan en
+EE.UU.). Por eso GitHub solo DECIDE y publica `orden.json`; el programa
+`ejecutor/ejecutor.py`, corriendo en el celular del usuario, envia las ordenes
+desde su pais y publica su resultado en `live.json`. Con eso este modulo arma
+`dashboard_live.json` para la pestana "Dinero real" del panel.
+
 Privacidad: el repositorio es publico, asi que en modo real los montos en
 dolares se omiten salvo que ROT_MOSTRAR_MONTOS=si (se publican solo
 porcentajes). La prueba de conexion nunca publica saldos ni claves.
@@ -141,7 +147,55 @@ def export_dashboard():
     with open(path, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
     log("INFO", f"  [ROT] panel exportado: {path} ({os.path.getsize(path) // 1024} KB)")
+    if R.MODE == "paper":
+        _export_orden(W, close, cur, asof)
+        _export_live_dashboard(out)
     return out
+
+
+def _export_orden(W, close, regime_on, asof):
+    """La decision del dia para el ejecutor del celular. Solo pesos y control; nada privado."""
+    modo = os.environ.get("ROT_MODO_REAL", "paper").strip().lower()
+    if modo not in ("paper", "live", "salir"):
+        modo = "paper"
+    w = W.iloc[-1]
+    orden = {
+        "version": 1,
+        "generado_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "asof": str(asof.date()),
+        "modo": modo,
+        "regimen_on": bool(regime_on),
+        "pesos": {s: round(float(x), 4) for s, x in w.items() if x > 0},
+        "tope_por_moneda": R.PARAMS["w_max"],
+        "freno_pct": R.MAX_DD_PCT,
+        "universo": sorted(close.columns),
+    }
+    with open(os.path.join(REPORTS, "orden.json"), "w", encoding="utf-8") as f:
+        json.dump(orden, f, ensure_ascii=False, indent=1)
+    log("INFO", f"  [ROT] orden publicada: modo={modo} pesos={orden['pesos'] or 'USDT 100%'}")
+
+
+def _export_live_dashboard(paper):
+    """Si el celular ya publico live.json, arma dashboard_live.json con el mercado de hoy y su cartera."""
+    src = os.path.join(REPORTS, "live.json")
+    dst = os.path.join(REPORTS, "dashboard_live.json")
+    if not os.path.exists(src):
+        if os.path.exists(dst):
+            os.remove(dst)
+        return
+    try:
+        with open(src, encoding="utf-8") as f:
+            live = json.load(f)
+        out = dict(paper)
+        out.update(modo="live", montos_visibles=bool(live.get("montos_visibles")),
+                   cartera=live["cartera"], historial=live.get("historial", []),
+                   operaciones=live.get("operaciones", []), n_operaciones=live.get("n_operaciones", 0),
+                   ejecutor=live.get("ejecutor", {}), generado_utc=live.get("actualizado_utc", paper["generado_utc"]))
+        with open(dst, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+        log("INFO", "  [ROT] panel de dinero real actualizado con el reporte del celular")
+    except Exception as e:
+        log("WARN", f"  [ROT] live.json ilegible, se ignora: {e}")
 
 
 def conexion():
