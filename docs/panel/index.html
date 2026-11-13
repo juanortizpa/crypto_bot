@@ -202,35 +202,40 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-si
 
   <section id="conectar">
     <div class="shead"><span class="n">DINERO REAL</span><h2>Conectar tu cuenta de Binance</h2>
-      <p>Cinco pasos. Las claves se guardan cifradas en GitHub, en el mismo lugar donde ya corre la simulación gratis. <b style="color:var(--ink)">Esta página nunca te las pide ni las ve.</b></p></div>
+      <p>GitHub decide cada día y publica la orden. Tu celular la ejecuta en Binance desde Colombia, porque Binance rechaza los servidores de GitHub (están en EE.UU.). Todo sigue siendo gratis. <b style="color:var(--ink)">Tus claves quedan solo en tu celular: esta página nunca las pide ni las ve.</b></p></div>
     <div class="note bad" id="con-warn"></div>
     <div class="steps" style="margin-top:16px">
       <div class="step" id="st1"><h3>Crea una clave de API en Binance</h3>
         <ol><li>Entra a Binance → tu perfil → <b>Gestión de API</b>.</li><li>Crea una clave <b>generada por el sistema</b> y ponle un nombre, por ejemplo <span class="mono">bot-rotacion</span>.</li>
-          <li>En <b>Editar restricciones</b> activa <b>Habilitar trading Spot y Margin</b>.</li><li>Deja <b>desactivado</b> «Habilitar retiros». Con eso la clave puede comprar y vender, pero no sacar dinero.</li>
+          <li>En <b>Editar restricciones</b> activa <b>Habilitar trading Spot y Margin</b>.</li><li>Deja <b>desactivado</b> «Habilitar retiros». Así la clave puede comprar y vender, pero nunca sacar dinero.</li>
+          <li>Deja el acceso por IP sin restringir: la IP de tu celular cambia.</li>
           <li>Copia la <b>API Key</b> y la <b>Secret Key</b>. La secreta solo se muestra una vez.</li></ol>
-        <div class="note">Si Binance te exige una lista de IP fijas para activar el trading, déjala en blanco hasta saber desde qué servidor operará el bot (paso 4).</div>
         <a class="btn" target="_blank" rel="noopener" href="https://www.binance.com/es/my/settings/api-management">Abrir Gestión de API en Binance</a></div>
-      <div class="step" id="st2"><h3>Guarda las dos claves en GitHub</h3>
-        <p>Crea dos «secretos» con estos nombres exactos y pega cada clave como valor. Una vez guardados nadie puede leerlos, ni siquiera tú: solo el bot al ejecutarse.</p>
-        <button class="copy" data-copy="BINANCE_API_KEY">BINANCE_API_KEY <small>copiar nombre</small></button>
-        <button class="copy" data-copy="BINANCE_API_SECRET">BINANCE_API_SECRET <small>copiar nombre</small></button><br>
-        <a class="btn" target="_blank" rel="noopener" id="lnk-secret" href="#">Añadir un secreto en GitHub</a></div>
-      <div class="step" id="st3"><h3>Indica con cuánto capital opera</h3>
-        <p>Crea una «variable» con el monto en USDT que el bot puede usar. Ese dinero debe estar libre en tu billetera Spot. El bot nunca toca más que eso ni otras monedas que tengas.</p>
-        <button class="copy" data-copy="ROT_CAPITAL_REAL">ROT_CAPITAL_REAL <small>copiar nombre</small></button>
-        <p style="margin-top:10px;color:var(--mute);font-size:14px">Con menos de unos 150 USDT varias órdenes quedan por debajo del mínimo de Binance y la cartera no puede seguir los pesos.</p>
-        <a class="btn" target="_blank" rel="noopener" id="lnk-var" href="#">Añadir una variable en GitHub</a></div>
+      <div class="step" id="st2"><h3>Crea un token de GitHub para el panel</h3>
+        <p>Sirve para que el celular publique aquí lo que hizo. Crea un token <b>fine-grained</b>:</p>
+        <ol><li>Nombre: <span class="mono">bot-celular</span>. Expiración: la más larga que te ofrezca.</li>
+          <li><b>Repository access</b> → <b>Only select repositories</b> → <span class="mono">crypto_bot</span>.</li>
+          <li><b>Permissions</b> → <b>Contents</b> → <b>Read and write</b>. Nada más.</li><li>Copia el token (empieza por <span class="mono">github_pat_</span>).</li></ol>
+        <a class="btn" target="_blank" rel="noopener" href="https://github.com/settings/personal-access-tokens/new">Crear el token en GitHub</a></div>
+      <div class="step" id="st3"><h3>Instala el bot en tu celular Android</h3>
+        <ol><li>Instala <b>Termux</b> desde F-Droid (la versión de Play Store está desactualizada).</li>
+          <li>Abre Termux y pega este comando:</li></ol>
+        <button class="copy" style="max-width:100%;overflow:hidden;text-overflow:ellipsis" data-copy="curl -sL https://raw.githubusercontent.com/juanortizpa/crypto_bot/main/ejecutor/instalar.sh | bash">curl -sL …/ejecutor/instalar.sh | bash <small>copiar</small></button>
+        <ol start="3"><li>Escribe <span class="mono">bot configurar</span> y pega la API Key, la Secret Key, el token de GitHub y el capital en USDT que el bot puede usar.</li>
+          <li>En Ajustes de Android quita la <b>optimización de batería</b> para Termux, y ciérralo y ábrelo una vez.</li></ol>
+        <p style="margin-top:10px;color:var(--mute);font-size:14px">El celular revisa la orden cada 3 horas y opera una sola vez por día. Si está apagado o sin internet, lo hace en la siguiente revisión. Con menos de unos 150 USDT varias órdenes quedan por debajo del mínimo de Binance.</p>
+        <a class="btn" target="_blank" rel="noopener" href="https://f-droid.org/es/packages/com.termux/">Termux en F-Droid</a></div>
       <div class="step" id="st4"><h3>Prueba la conexión</h3>
-        <p>Ejecuta la prueba: solo lee tu cuenta, no envía ninguna orden. En un par de minutos el resultado aparece aquí.</p>
-        <a class="btn" target="_blank" rel="noopener" id="lnk-test" href="#">Abrir «Probar conexión» y pulsar Run workflow</a>
-        <div class="checks" id="con-checks"><div class="chk"><i>·</i><div>Todavía no se ha ejecutado la prueba.</div></div></div></div>
+        <p>En Termux escribe <span class="mono">bot prueba</span>. Solo lee tu cuenta, no envía órdenes, y en segundos el resultado aparece aquí.</p>
+        <button class="copy" data-copy="bot prueba">bot prueba <small>copiar</small></button>
+        <div class="checks" id="con-checks"><div class="chk"><i>·</i><div>Todavía no se ha ejecutado la prueba desde el celular.</div></div></div></div>
       <div class="step" id="st5"><h3>Enciende el modo real</h3>
-        <p>Cuando la prueba salga completa, crea la variable de abajo con el valor <span class="mono">live</span>. Desde el siguiente ciclo diario el bot opera con dinero real y aquí aparece la pestaña «Dinero real». La simulación sigue corriendo en paralelo para comparar.</p>
-        <button class="copy" data-copy="ROT_MODE">ROT_MODE <small>copiar nombre</small></button><button class="copy" data-copy="live">live <small>copiar valor</small></button>
-        <ul><li><b>Pausar:</b> cambia <span class="mono">ROT_MODE</span> a <span class="mono">paper</span>. Lo que esté comprado se queda en tu cuenta.</li>
-          <li><b>Salir del todo:</b> cambia <span class="mono">ROT_MODE</span> a <span class="mono">salir</span>. En el siguiente ciclo vende todo a USDT y se detiene.</li>
-          <li><b>Mostrar montos:</b> por privacidad el panel real muestra solo porcentajes. Para ver dólares crea la variable <span class="mono">ROT_MOSTRAR_MONTOS</span> con valor <span class="mono">si</span> (serán públicos).</li></ul></div>
+        <p>Cuando la prueba salga completa, crea en GitHub la variable de abajo con el valor <span class="mono">live</span>. Desde la siguiente orden diaria el celular opera con dinero real y aquí aparece la pestaña «Dinero real». La simulación sigue corriendo en paralelo para comparar.</p>
+        <button class="copy" data-copy="ROT_MODE">ROT_MODE <small>copiar nombre</small></button><button class="copy" data-copy="live">live <small>copiar valor</small></button><br>
+        <a class="btn" target="_blank" rel="noopener" id="lnk-var" href="#">Añadir la variable en GitHub</a>
+        <ul><li><b>Pausar:</b> cambia <span class="mono">ROT_MODE</span> a <span class="mono">paper</span>. Lo comprado se queda en tu cuenta.</li>
+          <li><b>Salir del todo:</b> cambia <span class="mono">ROT_MODE</span> a <span class="mono">salir</span>. En la siguiente orden el celular vende todo a USDT y se detiene.</li>
+          <li><b>Ver qué pasó:</b> en Termux, <span class="mono">bot estado</span> muestra la cartera y <span class="mono">bot registro</span> las últimas acciones.</li></ul></div>
     </div>
   </section>
 
@@ -255,9 +260,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":
 const get = f => fetch(SRC + f + "?t=" + Math.floor(Date.now()/60000), {cache:"no-store"}).then(r => r.ok ? r.json() : null).catch(() => null);
 let DATA = {paper:null, live:null}, MODE = "paper", ALL = false;
 
-$("lnk-secret").href = "https://github.com/"+REPO+"/settings/secrets/actions/new";
 $("lnk-var").href = "https://github.com/"+REPO+"/settings/variables/actions/new";
-$("lnk-test").href = "https://github.com/"+REPO+"/actions/workflows/rotation-conexion.yml";
 document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
   const t = b.dataset.copy; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => {
     const s = b.querySelector("small"), o = s.textContent; s.textContent = "copiado"; setTimeout(() => s.textContent = o, 1400); }).catch(() => prompt("Copia este texto:", t));
@@ -322,6 +325,11 @@ function render(){
   else if(!g.on){ h = `Fuera del mercado: <em class="b">100% en USDT</em>`; w = `Bitcoin cerró en ${nf(g.btc)} y su media de ${P.media_regimen} días está en ${nf(g.media)}: le falta un ${nf(Math.abs(g.dist_pct),1)}% para abrir la compuerta. Lleva ${g.dias} día${g.dias==1?"":"s"} cerrada, y mientras siga así el bot no compra nada. Es lo esperado, no una avería.`; }
   else if(!pos.length){ h = `Compuerta abierta, <em class="b">esperando candidatas</em>`; w = `Bitcoin está sobre su media, pero ninguna moneda cumple todavía las dos condiciones (subir en ${P.momentum} días y estar en tendencia). El bot vuelve a mirar cada día.`; }
   else { h = `Invertido en <em>${esc(names)}</em>`; w = `La compuerta lleva ${g.dias} día${g.dias==1?"":"s"} abierta. El ${nf(c.expo_pct,0)}% del capital está en ${pos.length} moneda${pos.length==1?"":"s"} y el resto en USDT. La selección se revisa el ${fdate(d.proximo_rebalanceo)}.`; }
+  if(real && d.ejecutor){
+    const e = d.ejecutor;
+    if(e.estado === "error") w = "El celular reportó un error en su último intento: " + (e.motivo||"") + ". Revisa Termux con «bot registro».";
+    else if(e.ultima_orden && e.ultima_orden < d.asof) w += " Atención: el celular todavía no ha ejecutado la orden del " + fdate(d.asof) + " (la última que ejecutó es del " + fdate(e.ultima_orden) + ").";
+  }
   $("headline").className = ""; $("headline").innerHTML = h; $("why").textContent = w;
   $("eyebrow").textContent = real ? "Qué está haciendo con tu dinero" : "Qué está haciendo en la simulación";
   $("t-eq").textContent = d.montos_visibles ? usd(c.equity,2) : pct(c.pnl_pct,2); $("t-eq-d").textContent = d.montos_visibles ? "empezó con " + usd(c.inicial) + (c.inicio? " el " + fdate(c.inicio):"") : "montos ocultos por privacidad";
@@ -366,17 +374,18 @@ function render(){
 function conexion(c, live){
   const n = DATA.paper ? DATA.paper.n_operaciones : 0;
   $("con-warn").innerHTML = (n === 0 ? "<b>La simulación todavía no ha hecho ninguna operación.</b> Aún no hay ni un solo resultado fuera del backtest. Lo prudente es dejarla correr varias semanas con la compuerta abierta antes de conectar dinero. " : "") +
-    "<b>Riesgos que debes aceptar:</b> puedes perder dinero; GitHub puede retrasar o fallar una ejecución; y como el repositorio es público, cualquiera podrá ver en qué monedas estás (los montos van ocultos por defecto). Empieza con una cantidad que puedas perder.";
+    "<b>Riesgos que debes aceptar:</b> puedes perder dinero; si GitHub o tu celular fallan un día, la cartera se ajusta con retraso; y como el repositorio es público, cualquiera podrá ver en qué monedas estás (los montos van ocultos por defecto). Empieza con una cantidad que puedas perder.";
   if(c && c.pasos && c.pasos.length){
     $("con-checks").innerHTML = c.pasos.map(p => `<div class="chk ${p.ok?"ok":"no"}"><i>${p.ok?"✓":"✕"}</i><div>${esc(p.nombre)}<small>${esc(p.detalle)}</small></div></div>`).join("") +
       `<div style="font-size:13px;color:var(--mute);margin-top:6px">Probado el ${new Date(c.probado_utc).toLocaleString("es-CO")}. ${c.listo ? "Todo listo para el paso 5." : "Corrige lo marcado y vuelve a ejecutar la prueba."}</div>`;
-    const geo = c.pasos.find(p => p.nombre.indexOf("Binance responde") === 0 && !p.ok && /451|403|región/.test(p.detalle));
-    if(geo) $("con-checks").insertAdjacentHTML("afterbegin", `<div class="note bad" style="margin:0 0 6px"><b>Binance no acepta operar desde los servidores de GitHub.</b> Están en Estados Unidos y Binance bloquea esa región (error 451). La simulación no se ve afectada porque solo lee precios públicos, pero para dinero real el bot tiene que ejecutarse desde un servidor fuera de EE.UU. Hasta resolverlo, el modo real no puede operar y no conviene activarlo.</div>`);
-    const ok = k => c.pasos.some(p => p.nombre.indexOf(k) === 0 && p.ok);
-    if(ok("Las claves son válidas")){ $("st1").classList.add("done"); $("st2").classList.add("done"); }
-    else if(ok("Claves guardadas")) $("st2").classList.add("done");
-    if(ok("USDT suficiente")) $("st3").classList.add("done");
-    if(c.listo) $("st4").classList.add("done");
+    if(c.origen !== "celular"){ $("con-checks").innerHTML = `<div class="chk"><i>·</i><div>Todavía no se ha ejecutado la prueba desde el celular.</div></div>`; }
+    else {
+      const ok = k => c.pasos.some(p => p.nombre.indexOf(k) === 0 && p.ok);
+      if(ok("Las claves son válidas")) $("st1").classList.add("done");
+      if(ok("Publica en el panel")) $("st2").classList.add("done");
+      if(ok("Binance responde")) $("st3").classList.add("done");
+      if(c.listo) $("st4").classList.add("done");
+    }
   }
   if(live) $("st5").classList.add("done");
 }
