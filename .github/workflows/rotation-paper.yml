@@ -1,12 +1,14 @@
-# Prueba 24/7 GRATIS de la estrategia de rotacion en modo simulacion (paper).
+# Ciclo diario GRATIS de la estrategia de rotacion.
 #
 # La estrategia decide una vez al dia, tras el cierre diario de Binance
-# (00:00 UTC), asi que no hace falta un servidor encendido: basta con un
-# ciclo diario. El estado de la cartera simulada y los reportes se guardan
-# en la rama `paper-state` de este mismo repo.
+# (00:00 UTC), asi que no hace falta un servidor encendido. El estado y los
+# datos del panel web (docs/panel) se guardan en la rama `paper-state`.
 #
-# NO envia ordenes: no usa claves de Binance ni --execute.
-name: Rotacion (paper)
+# - Simulacion: corre siempre. No usa claves ni envia ordenes.
+# - Dinero real: SOLO si la variable ROT_MODE vale `live` y existen los
+#   secretos BINANCE_API_KEY / BINANCE_API_SECRET. Apagado por defecto.
+#   ROT_MODE=salir vende todo a USDT y detiene el bot real.
+name: Rotacion (ciclo diario)
 
 on:
   schedule:
@@ -24,11 +26,9 @@ concurrency:
 jobs:
   ciclo:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       BINANCE_PUBLIC_URL: https://data-api.binance.vision
-      AUTO_EXECUTE: "False"
-      ROT_CAPITAL: ${{ vars.ROT_CAPITAL || '1000' }}
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
@@ -41,45 +41,58 @@ jobs:
 
       - run: pip install -r requirements-rotation.txt
 
-      - name: Restaurar estado de la cartera simulada
-        run: |
-          mkdir -p state reports
-          if git fetch origin paper-state --depth 1 2>/dev/null; then
-            git show FETCH_HEAD:rotation_state.json   > state/rotation_state.json     || rm -f state/rotation_state.json
-            git show FETCH_HEAD:rotation_trades.csv   > reports/rotation_trades.csv   || rm -f reports/rotation_trades.csv
-            git show FETCH_HEAD:rotation_equity.csv   > reports/rotation_equity.csv   || rm -f reports/rotation_equity.csv
-          else
-            echo "Primera ejecucion: se crea la cartera con ROT_CAPITAL"
-          fi
+      - name: Restaurar estado
+        run: bash scripts/estado_panel.sh restaurar
 
-      - name: Ciclo diario (simulacion)
-        run: python bot_crypto.py rotation once | tee salida.txt
+      - name: Simulacion (sin ordenes reales)
+        env:
+          ROT_MODE: paper
+          AUTO_EXECUTE: "False"
+          ROT_CAPITAL: ${{ vars.ROT_CAPITAL || '1000' }}
+        run: |
+          python bot_crypto.py rotation once | tee reports/ultimo_ciclo.txt
+          python bot_crypto.py rotation dashboard
+
+      - name: Dinero real (solo si ROT_MODE es live o salir)
+        if: ${{ vars.ROT_MODE == 'live' || vars.ROT_MODE == 'salir' }}
+        continue-on-error: true
+        env:
+          ROT_MODE: live
+          BINANCE_MODE: live
+          AUTO_EXECUTE: "True"
+          ROT_LIQUIDAR: ${{ vars.ROT_MODE == 'salir' && 'si' || 'no' }}
+          ROT_CAPITAL: ${{ vars.ROT_CAPITAL_REAL }}
+          ROT_MOSTRAR_MONTOS: ${{ vars.ROT_MOSTRAR_MONTOS }}
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+        run: |
+          set -o pipefail
+          if [ -z "$BINANCE_API_KEY" ] || [ -z "$BINANCE_API_SECRET" ] || [ -z "$ROT_CAPITAL" ]; then
+            echo "Modo real pedido pero faltan secretos o ROT_CAPITAL_REAL: no se opera." | tee reports/ultimo_ciclo_live.txt
+            exit 1
+          fi
+          python bot_crypto.py rotation once --execute | tee reports/ultimo_ciclo_live.txt
+          python bot_crypto.py rotation dashboard
+
+      - name: Comprobar acceso a Binance para operar (solo lectura)
+        if: always()
+        continue-on-error: true
+        env:
+          BINANCE_MODE: live
+          ROT_MODE: live
+          ROT_CAPITAL: ${{ vars.ROT_CAPITAL_REAL || '0' }}
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
+        run: python bot_crypto.py rotation conexion
 
       - name: Resumen
         if: always()
         run: |
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat salida.txt >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          for f in reports/ultimo_ciclo.txt reports/ultimo_ciclo_live.txt; do
+            [ -f "$f" ] || continue
+            { echo "### $f"; echo '```'; cat "$f"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
 
       - name: Guardar estado en la rama paper-state
-        run: |
-          tmp="$(mktemp -d)"
-          cp state/rotation_state.json "$tmp/"
-          cp reports/rotation_equity.csv "$tmp/" 2>/dev/null || true
-          cp reports/rotation_trades.csv "$tmp/" 2>/dev/null || true
-          cp salida.txt "$tmp/ultimo_ciclo.txt"
-          git config user.name  "rotation-bot"
-          git config user.email "rotation-bot@users.noreply.github.com"
-          if git rev-parse --verify -q FETCH_HEAD >/dev/null && git ls-remote --exit-code origin paper-state >/dev/null; then
-            git checkout -q -B paper-state FETCH_HEAD
-          else
-            git checkout -q --orphan paper-state
-            git rm -rfq . || true
-          fi
-          cp "$tmp"/* .
-          for f in rotation_state.json ultimo_ciclo.txt rotation_equity.csv rotation_trades.csv; do
-            if [ -f "$f" ]; then git add "$f"; fi
-          done
-          git commit -qm "paper: ciclo $(date -u +%F)" || echo "sin cambios"
-          git push -q origin paper-state
+        if: always()
+        run: bash scripts/estado_panel.sh guardar "ciclo"

@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel del bot · Rotación</title>
+<meta name="description" content="Qué está haciendo el bot de rotación, en qué está invertido y cómo conectarlo.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0b0d; --panel:#14161a; --panel2:#1b1e24; --line:#2a2e36; --ink:#f4dfb6; --text:#d8d2c4; --mute:#8d8a80;
+  --brass:#d9a24a; --green:#2fe08c; --red:#ff5a45; --amber:#ffb020; --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;font-size:16px;line-height:1.55;
+  background-image:radial-gradient(1200px 500px at 15% -10%,rgba(217,162,74,.10),transparent 60%),radial-gradient(900px 500px at 100% 0%,rgba(47,224,140,.06),transparent 55%);background-attachment:fixed}
+a{color:var(--brass)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px}
+h1,h2,h3,.num{font-family:Oswald,sans-serif;color:var(--ink);letter-spacing:.01em;line-height:1.12}
+.mono{font-family:"JetBrains Mono",monospace}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:22px 0 18px;border-bottom:1px solid var(--line)}
+.logo{width:44px;height:44px;flex:none}
+header .tt{font-family:Oswald,sans-serif;font-size:22px;color:var(--ink);font-weight:600;text-transform:uppercase}
+header .sub{font-size:13px;color:var(--mute)}
+.sp{flex:1}
+.tabs{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px}
+.tabs button{font:600 13px Inter,sans-serif;color:var(--mute);background:none;border:0;padding:8px 16px;border-radius:999px;cursor:pointer}
+.tabs button.on{background:var(--brass);color:#14100a}
+.tabs button:disabled{opacity:.45;cursor:not-allowed}
+.pill{display:inline-flex;align-items:center;gap:8px;font:600 12px "JetBrains Mono",monospace;letter-spacing:.12em;text-transform:uppercase;padding:6px 12px;border-radius:999px;border:1px solid var(--line);color:var(--mute)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.pill.sim i{background:var(--brass)} .pill.real{color:var(--green);border-color:rgba(47,224,140,.4)} .pill.real i{background:var(--green)}
+.hero{padding:44px 0 28px}
+.hero .eyebrow{font:600 13px "JetBrains Mono",monospace;letter-spacing:.2em;color:var(--brass);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-size:clamp(34px,6vw,68px);font-weight:700;text-transform:uppercase;max-width:980px}
+.hero h1 em{font-style:normal;color:var(--green)} .hero h1 em.r{color:var(--red)} .hero h1 em.b{color:var(--brass)}
+.hero p{margin-top:16px;max-width:760px;font-size:18px;color:var(--text)}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:30px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
+.tile .k{font:600 12px "JetBrains Mono",monospace;letter-spacing:.14em;color:var(--mute);text-transform:uppercase}
+.tile .v{font-family:Oswald,sans-serif;font-size:38px;font-weight:600;color:var(--ink);margin-top:6px;font-variant-numeric:tabular-nums}
+.tile .d{font-size:13px;color:var(--mute);margin-top:2px}
+.up{color:var(--green)!important} .down{color:var(--red)!important}
+section{margin-top:54px}
+.shead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.shead .n{font:600 12px "JetBrains Mono",monospace;background:var(--brass);color:#14100a;padding:3px 9px;letter-spacing:.08em}
+.shead h2{font-size:30px;text-transform:uppercase;font-weight:600}
+.shead p{color:var(--mute);font-size:15px;flex-basis:100%;max-width:820px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px}
+.grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--mute);margin-bottom:8px}
+.legend b{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px;border-radius:2px}
+svg{display:block;width:100%;height:auto}
+.gauge{display:flex;flex-direction:column;gap:14px;justify-content:center}
+.gauge .big{font-family:Oswald,sans-serif;font-size:54px;font-weight:700;line-height:1}
+.gauge .row{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:10px;font-size:14px}
+.gauge .row span:last-child{font-family:"JetBrains Mono",monospace;color:var(--ink)}
+.bar{height:10px;border-radius:6px;background:var(--panel2);position:relative;overflow:hidden}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:6px;background:var(--brass)}
+.race{display:grid;gap:7px}
+.lane{display:grid;grid-template-columns:62px 1fr 74px 96px;align-items:center;gap:12px;font-size:14px}
+.lane .s{font:600 14px "JetBrains Mono",monospace;color:var(--ink)}
+.lane .trk{height:16px;background:var(--panel2);border-radius:4px;position:relative}
+.lane .trk i{position:absolute;top:0;bottom:0;border-radius:4px;background:#5b5f69}
+.lane .trk .zero{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--line)}
+.lane.top .trk i{background:var(--green)} .lane.top .s{color:var(--green)}
+.lane .p{font-family:"JetBrains Mono",monospace;text-align:right;font-variant-numeric:tabular-nums}
+.tag{font:600 11px "JetBrains Mono",monospace;letter-spacing:.06em;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mute);text-align:center;white-space:nowrap}
+.tag.ok{color:var(--green);border-color:rgba(47,224,140,.35)} .tag.no{color:var(--mute)}
+.more{margin-top:12px;background:none;border:1px solid var(--line);color:var(--text);padding:8px 14px;border-radius:8px;cursor:pointer;font:500 14px Inter,sans-serif}
+.alloc{display:flex;height:34px;border-radius:8px;overflow:hidden;margin:6px 0 14px;background:var(--panel2)}
+.alloc div{display:flex;align-items:center;justify-content:center;font:600 12px "JetBrains Mono",monospace;color:#0b0b0b;min-width:0;overflow:hidden;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{font:600 11px "JetBrains Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+td.r,th.r{text-align:right} td.m{font-family:"JetBrains Mono",monospace}
+.tscroll{overflow-x:auto}
+.empty{padding:26px 10px;text-align:center;color:var(--mute)}
+.empty b{display:block;font-family:Oswald,sans-serif;font-size:22px;color:var(--ink);font-weight:600;text-transform:uppercase;margin-bottom:4px}
+.rules{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.rule{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+.rule .n{font:600 12px "JetBrains Mono",monospace;color:var(--brass);letter-spacing:.14em}
+.rule h3{font-size:22px;text-transform:uppercase;margin:6px 0 8px;font-weight:600}
+.rule p{font-size:14px;color:var(--text)}
+.rule .now{margin-top:12px;font:600 13px "JetBrains Mono",monospace;padding-top:10px;border-top:1px solid var(--line);color:var(--ink)}
+.years{display:flex;align-items:flex-end;gap:10px;height:190px;padding-top:10px}
+.years .y{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:6px;font:600 12px "JetBrains Mono",monospace;color:var(--mute)}
+.years .y i{width:100%;border-radius:4px 4px 0 0;background:var(--green);min-height:3px}
+.years .y.neg i{background:var(--red)}
+.years .y span.v{color:var(--ink)}
+.note{border-left:3px solid var(--amber);background:rgba(255,176,32,.07);padding:14px 16px;border-radius:0 10px 10px 0;font-size:14.5px;margin-top:14px}
+.note.bad{border-color:var(--red);background:rgba(255,90,69,.07)}
+.note b{color:var(--ink)}
+.steps{display:grid;gap:14px;counter-reset:st}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:22px 22px 22px 74px;position:relative}
+.step:before{counter-increment:st;content:counter(st);position:absolute;left:20px;top:20px;width:38px;height:38px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font:700 18px Oswald,sans-serif;color:var(--brass)}
+.step.done:before{content:"✓";background:var(--green);color:#06200f;border-color:var(--green)}
+.step h3{font-size:22px;text-transform:uppercase;font-weight:600;margin-bottom:6px}
+.step ol,.step ul{margin:8px 0 0 20px;font-size:15px} .step li{margin:4px 0}
+.step p{font-size:15px}
+.btn{display:inline-flex;align-items:center;gap:8px;margin:12px 10px 0 0;background:var(--brass);color:#14100a;font:600 14px Inter,sans-serif;text-decoration:none;padding:10px 16px;border-radius:9px;border:0;cursor:pointer}
+.btn.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
+.copy{display:inline-flex;align-items:center;gap:8px;font:600 14px "JetBrains Mono",monospace;background:var(--panel2);border:1px solid var(--line);color:var(--ink);padding:7px 12px;border-radius:8px;cursor:pointer;margin:8px 8px 0 0}
+.copy small{font:500 11px Inter,sans-serif;color:var(--mute)}
+.checks{display:grid;gap:8px;margin-top:12px}
+.chk{display:grid;grid-template-columns:24px 1fr;gap:10px;font-size:14.5px;align-items:start}
+.chk i{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 13px Inter,sans-serif;font-style:normal;background:var(--panel2);color:var(--mute)}
+.chk.ok i{background:rgba(47,224,140,.18);color:var(--green)} .chk.no i{background:rgba(255,90,69,.18);color:var(--red)}
+.chk small{display:block;color:var(--mute)}
+footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-size:13px;color:var(--mute)}
+#err{display:none;margin-top:24px}
+.skel{color:var(--mute)}
+@media (max-width:900px){.tiles{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}.rules{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.tile .v{font-size:30px}.rules{grid-template-columns:1fr}.lane{grid-template-columns:52px 1fr 64px}.lane .tag{display:none}.step{padding:70px 18px 18px}.shead h2{font-size:25px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22" fill="#d9a24a"/><circle cx="24" cy="24" r="17.5" fill="none" stroke="#7a5417" stroke-width="1.6"/>
+      <g fill="#7a5417"><circle cx="17" cy="17" r="4.2"/><circle cx="31" cy="17" r="4.2"/><circle cx="17" cy="31" r="4.2"/><circle cx="31" cy="31" r="4.2"/></g>
+      <g fill="#d9a24a"><circle cx="17" cy="17" r="1.5"/><circle cx="31" cy="17" r="1.5"/><circle cx="17" cy="31" r="1.5"/><circle cx="31" cy="31" r="1.5"/></g></svg>
+    <div><div class="tt">Bot de rotación</div><div class="sub" id="upd">Cargando datos…</div></div>
+    <div class="sp"></div>
+    <span class="pill sim" id="pill"><i></i><span>Simulación</span></span>
+    <div class="tabs" role="tablist"><button id="tab-paper" class="on">Simulación</button><button id="tab-live" disabled title="Aún no hay cartera real">Dinero real</button></div>
+  </header>
+
+  <div class="card note bad" id="err"></div>
+
+  <div class="hero">
+    <div class="eyebrow" id="eyebrow">Qué está haciendo ahora</div>
+    <h1 id="headline" class="skel">Leyendo el último ciclo…</h1>
+    <p id="why"></p>
+    <div class="tiles">
+      <div class="tile"><div class="k">Valor de la cartera</div><div class="v" id="t-eq">—</div><div class="d" id="t-eq-d"></div></div>
+      <div class="tile"><div class="k">Resultado</div><div class="v" id="t-pnl">—</div><div class="d" id="t-pnl-d"></div></div>
+      <div class="tile"><div class="k">Invertido ahora</div><div class="v" id="t-expo">—</div><div class="d" id="t-expo-d"></div></div>
+      <div class="tile"><div class="k">Próxima selección</div><div class="v" id="t-next">—</div><div class="d" id="t-next-d"></div></div>
+    </div>
+  </div>
+
+  <section id="regimen">
+    <div class="shead"><span class="n">REGLA 1</span><h2>La compuerta del mercado</h2>
+      <p>El bot solo invierte cuando Bitcoin cierra por encima de su media de <span class="pm-ma">100</span> días. Por debajo, todo espera en USDT.</p></div>
+    <div class="grid2">
+      <div class="card">
+        <div class="legend"><span><b style="background:var(--ink)"></b>Precio de Bitcoin</span><span><b style="background:var(--brass)"></b>Media de <span class="pm-ma">100</span> días</span>
+          <span><b style="background:rgba(47,224,140,.5);height:10px"></b>Compuerta abierta</span></div>
+        <svg id="ch-btc" viewBox="0 0 760 300" role="img" aria-label="Precio de Bitcoin frente a su media"></svg>
+      </div>
+      <div class="card gauge">
+        <div><div class="k mono" style="font-size:12px;letter-spacing:.14em;color:var(--mute)">COMPUERTA</div><div class="big" id="g-state">—</div></div>
+        <div><div class="bar"><i id="g-bar"></i></div><div style="font-size:13px;color:var(--mute);margin-top:6px" id="g-txt"></div></div>
+        <div class="row"><span>Bitcoin (último cierre)</span><span id="g-btc">—</span></div>
+        <div class="row"><span>Media de <span class="pm-ma">100</span> días</span><span id="g-ma">—</span></div>
+        <div class="row"><span>Días seguidos en este estado</span><span id="g-days">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="carrera">
+    <div class="shead"><span class="n">REGLA 2</span><h2>La carrera de las monedas</h2>
+      <p>Cada semana entran las <span class="pm-top">3</span> que más subieron en <span class="pm-mom">30</span> días, y solo si siguen en tendencia (precio sobre su media de <span class="pm-tr">50</span> días).</p></div>
+    <div class="card"><div class="race" id="race"></div><button class="more" id="race-more">Ver todas</button></div>
+  </section>
+
+  <section id="cartera">
+    <div class="shead"><span class="n">REGLA 3</span><h2>En qué está el dinero</h2>
+      <p>Las monedas más volátiles reciben menos. Nunca más del <span class="pm-cap">40</span>% en una sola, y sin apalancamiento.</p></div>
+    <div class="card"><div class="alloc" id="alloc"></div><div class="tscroll" id="hold"></div></div>
+  </section>
+
+  <section id="evolucion">
+    <div class="shead"><span class="n">RESULTADO</span><h2>Cómo va</h2><p id="ev-sub">Resultado acumulado desde que empezó a correr.</p></div>
+    <div class="card"><svg id="ch-eq" viewBox="0 0 760 240" role="img" aria-label="Resultado acumulado"></svg></div>
+  </section>
+
+  <section id="operaciones">
+    <div class="shead"><span class="n">REGISTRO</span><h2>Operaciones</h2><p>Cada compra y cada venta, con su motivo.</p></div>
+    <div class="card tscroll" id="ops"></div>
+  </section>
+
+  <section id="reglas">
+    <div class="shead"><span class="n">MÉTODO</span><h2>Las cuatro reglas</h2><p>Siempre las mismas, una vez al día, tras el cierre diario de Binance (00:00 UTC).</p></div>
+    <div class="rules" id="rules"></div>
+  </section>
+
+  <section id="esperar">
+    <div class="shead"><span class="n">BACKTEST</span><h2>Qué esperar</h2>
+      <p>Lo que estas reglas habrían hecho con datos históricos y comisiones incluidas. Es una prueba con el pasado, no una promesa.</p></div>
+    <div class="grid2">
+      <div class="card"><div class="legend"><span>Resultado de cada año en el backtest</span></div><div class="years" id="years"></div></div>
+      <div class="card gauge" id="bt"></div>
+    </div>
+    <div class="note"><b>Léelo antes de poner dinero.</b> Hubo años planos o negativos y caídas de más de 30%. En mercados muy alcistas esta estrategia gana menos que tener solo Bitcoin; lo que aporta es quedarse fuera en los bajistas. Puede pasar meses sin operar.</div>
+  </section>
+
+  <section id="conectar">
+    <div class="shead"><span class="n">DINERO REAL</span><h2>Conectar tu cuenta de Binance</h2>
+      <p>Cinco pasos. Las claves se guardan cifradas en GitHub, en el mismo lugar donde ya corre la simulación gratis. <b style="color:var(--ink)">Esta página nunca te las pide ni las ve.</b></p></div>
+    <div class="note bad" id="con-warn"></div>
+    <div class="steps" style="margin-top:16px">
+      <div class="step" id="st1"><h3>Crea una clave de API en Binance</h3>
+        <ol><li>Entra a Binance → tu perfil → <b>Gestión de API</b>.</li><li>Crea una clave <b>generada por el sistema</b> y ponle un nombre, por ejemplo <span class="mono">bot-rotacion</span>.</li>
+          <li>En <b>Editar restricciones</b> activa <b>Habilitar trading Spot y Margin</b>.</li><li>Deja <b>desactivado</b> «Habilitar retiros». Con eso la clave puede comprar y vender, pero no sacar dinero.</li>
+          <li>Copia la <b>API Key</b> y la <b>Secret Key</b>. La secreta solo se muestra una vez.</li></ol>
+        <div class="note">Si Binance te exige una lista de IP fijas para activar el trading, déjala en blanco hasta saber desde qué servidor operará el bot (paso 4).</div>
+        <a class="btn" target="_blank" rel="noopener" href="https://www.binance.com/es/my/settings/api-management">Abrir Gestión de API en Binance</a></div>
+      <div class="step" id="st2"><h3>Guarda las dos claves en GitHub</h3>
+        <p>Crea dos «secretos» con estos nombres exactos y pega cada clave como valor. Una vez guardados nadie puede leerlos, ni siquiera tú: solo el bot al ejecutarse.</p>
+        <button class="copy" data-copy="BINANCE_API_KEY">BINANCE_API_KEY <small>copiar nombre</small></button>
+        <button class="copy" data-copy="BINANCE_API_SECRET">BINANCE_API_SECRET <small>copiar nombre</small></button><br>
+        <a class="btn" target="_blank" rel="noopener" id="lnk-secret" href="#">Añadir un secreto en GitHub</a></div>
+      <div class="step" id="st3"><h3>Indica con cuánto capital opera</h3>
+        <p>Crea una «variable» con el monto en USDT que el bot puede usar. Ese dinero debe estar libre en tu billetera Spot. El bot nunca toca más que eso ni otras monedas que tengas.</p>
+        <button class="copy" data-copy="ROT_CAPITAL_REAL">ROT_CAPITAL_REAL <small>copiar nombre</small></button>
+        <p style="margin-top:10px;color:var(--mute);font-size:14px">Con menos de unos 150 USDT varias órdenes quedan por debajo del mínimo de Binance y la cartera no puede seguir los pesos.</p>
+        <a class="btn" target="_blank" rel="noopener" id="lnk-var" href="#">Añadir una variable en GitHub</a></div>
+      <div class="step" id="st4"><h3>Prueba la conexión</h3>
+        <p>Ejecuta la prueba: solo lee tu cuenta, no envía ninguna orden. En un par de minutos el resultado aparece aquí.</p>
+        <a class="btn" target="_blank" rel="noopener" id="lnk-test" href="#">Abrir «Probar conexión» y pulsar Run workflow</a>
+        <div class="checks" id="con-checks"><div class="chk"><i>·</i><div>Todavía no se ha ejecutado la prueba.</div></div></div></div>
+      <div class="step" id="st5"><h3>Enciende el modo real</h3>
+        <p>Cuando la prueba salga completa, crea la variable de abajo con el valor <span class="mono">live</span>. Desde el siguiente ciclo diario el bot opera con dinero real y aquí aparece la pestaña «Dinero real». La simulación sigue corriendo en paralelo para comparar.</p>
+        <button class="copy" data-copy="ROT_MODE">ROT_MODE <small>copiar nombre</small></button><button class="copy" data-copy="live">live <small>copiar valor</small></button>
+        <ul><li><b>Pausar:</b> cambia <span class="mono">ROT_MODE</span> a <span class="mono">paper</span>. Lo que esté comprado se queda en tu cuenta.</li>
+          <li><b>Salir del todo:</b> cambia <span class="mono">ROT_MODE</span> a <span class="mono">salir</span>. En el siguiente ciclo vende todo a USDT y se detiene.</li>
+          <li><b>Mostrar montos:</b> por privacidad el panel real muestra solo porcentajes. Para ver dólares crea la variable <span class="mono">ROT_MOSTRAR_MONTOS</span> con valor <span class="mono">si</span> (serán públicos).</li></ul></div>
+    </div>
+  </section>
+
+  <footer>
+    <div id="foot"></div>
+    <div style="margin-top:6px">Este panel solo lee los archivos que el bot publica una vez al día en la rama <span class="mono">paper-state</span> del repositorio. No es asesoría financiera.</div>
+  </footer>
+</div>
+
+<script>
+(function(){
+const REPO = "juanortizpa/crypto_bot";
+const qs = new URLSearchParams(location.search);
+const SRC = qs.get("src") || ("https://raw.githubusercontent.com/" + REPO + "/paper-state/");
+const $ = id => document.getElementById(id);
+const nf = (x,d=0) => x==null ? "—" : Number(x).toLocaleString("es-CO",{minimumFractionDigits:d,maximumFractionDigits:d});
+const usd = (x,d=0) => x==null ? "oculto" : "$" + nf(x,d);
+const pct = (x,d=1) => x==null ? "—" : (x>0?"+":x<0?"−":"") + nf(Math.abs(x),d) + "%";
+const px = x => x==null ? "—" : (x>=1000 ? nf(x,0) : x>=1 ? nf(x,2) : nf(x,4));
+const fdate = s => { if(!s) return "—"; const d=new Date(s+"T00:00:00Z"); return d.toLocaleDateString("es-CO",{day:"numeric",month:"short",timeZone:"UTC"}); };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const get = f => fetch(SRC + f + "?t=" + Math.floor(Date.now()/60000), {cache:"no-store"}).then(r => r.ok ? r.json() : null).catch(() => null);
+let DATA = {paper:null, live:null}, MODE = "paper", ALL = false;
+
+$("lnk-secret").href = "https://github.com/"+REPO+"/settings/secrets/actions/new";
+$("lnk-var").href = "https://github.com/"+REPO+"/settings/variables/actions/new";
+$("lnk-test").href = "https://github.com/"+REPO+"/actions/workflows/rotation-conexion.yml";
+document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
+  const t = b.dataset.copy; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => {
+    const s = b.querySelector("small"), o = s.textContent; s.textContent = "copiado"; setTimeout(() => s.textContent = o, 1400); }).catch(() => prompt("Copia este texto:", t));
+}));
+
+function line(pts){ return pts.map((p,i) => (i?"L":"M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" "); }
+
+function chartBtc(d){
+  const s = d.btc_serie.filter(p => p.m > 0), W=760, H=300, L=8, R=62, T=14, B=26;
+  if(!s.length){ $("ch-btc").innerHTML = ""; return; }
+  const vals = s.flatMap(p => [p.c,p.m]), lo = Math.min(...vals)*0.97, hi = Math.max(...vals)*1.03;
+  const X = i => L + i/(s.length-1)*(W-L-R), Y = v => T + (1-(v-lo)/(hi-lo))*(H-T-B);
+  let bands = "", st = null;
+  s.forEach((p,i) => { const on = p.c > p.m; if(on && st==null) st = i; if((!on || i==s.length-1) && st!=null){ bands += `<rect x="${X(st).toFixed(1)}" y="${T}" width="${(X(i)-X(st)).toFixed(1)}" height="${H-T-B}" fill="rgba(47,224,140,.09)"/>`; st = null; } });
+  let grid = "";
+  for(let k=0;k<4;k++){ const v = lo + (hi-lo)*(k+0.5)/4; grid += `<line x1="${L}" x2="${W-R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#23262d"/><text x="${W-R+8}" y="${(Y(v)+4).toFixed(1)}" fill="#8d8a80" font-size="12" font-family="JetBrains Mono">${nf(v/1000,0)}k</text>`; }
+  let months = "", last = "";
+  s.forEach((p,i) => { const m = p.d.slice(0,7); if(m!==last && i>8 && i<s.length-12){ months += `<text x="${X(i).toFixed(1)}" y="${H-7}" fill="#8d8a80" font-size="12" font-family="JetBrains Mono">${new Date(p.d+"T00:00:00Z").toLocaleDateString("es-CO",{month:"short",timeZone:"UTC"})}</text>`; } last = m; });
+  const e = s[s.length-1], on = e.c > e.m;
+  $("ch-btc").innerHTML = bands + grid + months +
+    `<path d="${line(s.map((p,i)=>[X(i),Y(p.m)]))}" fill="none" stroke="#d9a24a" stroke-width="2.2"/>` +
+    `<path d="${line(s.map((p,i)=>[X(i),Y(p.c)]))}" fill="none" stroke="#f4dfb6" stroke-width="2"/>` +
+    `<circle cx="${X(s.length-1)}" cy="${Y(e.c)}" r="5" fill="${on?"#2fe08c":"#ff5a45"}"/>`;
+}
+
+function chartEq(d){
+  const h = d.historial, el = $("ch-eq"), W=760, H=240, L=8, R=62, T=16, B=26;
+  if(h.length < 2){ el.innerHTML = `<text x="${W/2}" y="${H/2-6}" text-anchor="middle" fill="#f4dfb6" font-family="Oswald" font-size="24" font-weight="600">AÚN NO HAY CURVA</text><text x="${W/2}" y="${H/2+22}" text-anchor="middle" fill="#8d8a80" font-size="15">Se dibuja a partir del segundo día de registro.</text>`; return; }
+  const v = h.map(p => p.pct), lo = Math.min(0,...v), hi = Math.max(0,...v), pad = Math.max(1,(hi-lo)*0.15);
+  const a = lo-pad, b = hi+pad, X = i => L + i/(h.length-1)*(W-L-R), Y = x => T + (1-(x-a)/(b-a))*(H-T-B);
+  const pts = h.map((p,i) => [X(i),Y(p.pct)]), endc = v[v.length-1] >= 0 ? "#2fe08c" : "#ff5a45";
+  let g = "";
+  [a+(b-a)*.15, 0, b-(b-a)*.15].forEach(t => { g += `<line x1="${L}" x2="${W-R}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="${t===0?"#3a3f49":"#23262d"}"/><text x="${W-R+8}" y="${(Y(t)+4).toFixed(1)}" fill="#8d8a80" font-size="12" font-family="JetBrains Mono">${pct(t,1)}</text>`; });
+  el.innerHTML = g + `<path d="${line(pts)} L ${X(h.length-1)} ${Y(0)} L ${X(0)} ${Y(0)} Z" fill="${endc}" opacity=".10"/><path d="${line(pts)}" fill="none" stroke="${endc}" stroke-width="2.4"/>` +
+    `<text x="${L}" y="${H-7}" fill="#8d8a80" font-size="12" font-family="JetBrains Mono">${fdate(h[0].d)}</text><text x="${W-R}" y="${H-7}" text-anchor="end" fill="#8d8a80" font-size="12" font-family="JetBrains Mono">${fdate(h[h.length-1].d)}</text>`;
+}
+
+function race(d){
+  const r = d.ranking, max = Math.max(...r.map(x => Math.abs(x.mom)), 5), show = ALL ? r : r.slice(0,10);
+  const neg = r.some(x => x.mom < 0), z = neg ? 30 : 0;
+  $("race").innerHTML = show.map(x => { const w = Math.abs(x.mom)/max*(100-z); const left = x.mom>=0 ? z : z - Math.abs(x.mom)/max*z;
+    const ww = x.mom>=0 ? w : Math.abs(x.mom)/max*z;
+    return `<div class="lane ${x.elegida?"top":""}"><span class="s">${esc(x.s)}</span><div class="trk"><span class="zero" style="left:${z}%"></span><i style="left:${left}%;width:${Math.max(ww,.6)}%"></i></div><span class="p ${x.mom>=0?"up":"down"}">${pct(x.mom)}</span><span class="tag ${x.tendencia?"ok":"no"}">${x.elegida?"EN CARTERA":x.tendencia?"en tendencia":"sin tendencia"}</span></div>`; }).join("");
+  $("race-more").textContent = ALL ? "Ver solo las 10 primeras" : "Ver las " + r.length + " monedas";
+}
+
+function render(){
+  const d = DATA[MODE]; if(!d) return;
+  const c = d.cartera, g = d.regimen, P = d.parametros, real = d.modo === "live";
+  document.querySelectorAll(".pm-ma").forEach(e => e.textContent = P.media_regimen);
+  document.querySelectorAll(".pm-top").forEach(e => e.textContent = P.top);
+  document.querySelectorAll(".pm-mom").forEach(e => e.textContent = P.momentum);
+  document.querySelectorAll(".pm-tr").forEach(e => e.textContent = P.media_tendencia);
+  document.querySelectorAll(".pm-cap").forEach(e => e.textContent = P.tope_pct);
+  $("pill").className = "pill " + (real ? "real" : "sim"); $("pill").lastElementChild.textContent = real ? "Dinero real" : "Simulación";
+  const gen = new Date(d.generado_utc), hrs = (Date.now()-gen)/36e5;
+  $("upd").textContent = "Último ciclo: " + gen.toLocaleString("es-CO",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) + (hrs > 40 ? " · ¡lleva más de un día sin actualizarse!" : " · cierre del " + fdate(d.asof));
+  $("upd").style.color = hrs > 40 ? "var(--red)" : "";
+  const pos = c.posiciones, names = pos.map(p => p.s).join(", ");
+  let h, w;
+  if(c.detenido){ h = `El bot está <em class="r">detenido</em>`; w = "Se activó el freno de emergencia: " + esc(c.motivo||"") + ". No volverá a operar hasta que se reinicie a mano."; }
+  else if(!g.on){ h = `Fuera del mercado: <em class="b">100% en USDT</em>`; w = `Bitcoin cerró en ${nf(g.btc)} y su media de ${P.media_regimen} días está en ${nf(g.media)}: le falta un ${nf(Math.abs(g.dist_pct),1)}% para abrir la compuerta. Lleva ${g.dias} día${g.dias==1?"":"s"} cerrada, y mientras siga así el bot no compra nada. Es lo esperado, no una avería.`; }
+  else if(!pos.length){ h = `Compuerta abierta, <em class="b">esperando candidatas</em>`; w = `Bitcoin está sobre su media, pero ninguna moneda cumple todavía las dos condiciones (subir en ${P.momentum} días y estar en tendencia). El bot vuelve a mirar cada día.`; }
+  else { h = `Invertido en <em>${esc(names)}</em>`; w = `La compuerta lleva ${g.dias} día${g.dias==1?"":"s"} abierta. El ${nf(c.expo_pct,0)}% del capital está en ${pos.length} moneda${pos.length==1?"":"s"} y el resto en USDT. La selección se revisa el ${fdate(d.proximo_rebalanceo)}.`; }
+  $("headline").className = ""; $("headline").innerHTML = h; $("why").textContent = w;
+  $("eyebrow").textContent = real ? "Qué está haciendo con tu dinero" : "Qué está haciendo en la simulación";
+  $("t-eq").textContent = d.montos_visibles ? usd(c.equity,2) : pct(c.pnl_pct,2); $("t-eq-d").textContent = d.montos_visibles ? "empezó con " + usd(c.inicial) + (c.inicio? " el " + fdate(c.inicio):"") : "montos ocultos por privacidad";
+  $("t-pnl").textContent = pct(c.pnl_pct,2); $("t-pnl").className = "v " + (c.pnl_pct>0?"up":c.pnl_pct<0?"down":"");
+  $("t-pnl-d").textContent = "caída desde el máximo: " + pct(c.caida_pct,1) + " · freno en −" + P.freno_pct + "%";
+  $("t-expo").textContent = nf(c.expo_pct,0) + "%"; $("t-expo-d").textContent = pos.length ? pos.length + " posición" + (pos.length>1?"es":"") + " · " + nf(100-c.expo_pct,0) + "% en USDT" : "todo en USDT";
+  $("t-next").textContent = fdate(d.proximo_rebalanceo); $("t-next-d").textContent = g.on ? "revisión semanal de las " + P.top + " mejores" : "solo si la compuerta se abre antes";
+  $("g-state").textContent = g.on ? "ABIERTA" : "CERRADA"; $("g-state").style.color = g.on ? "var(--green)" : "var(--red)";
+  $("g-btc").textContent = nf(g.btc) + " USDT"; $("g-ma").textContent = nf(g.media) + " USDT"; $("g-days").textContent = g.dias;
+  const prog = g.on ? 100 : Math.max(4, Math.min(100, 100 - Math.abs(g.dist_pct)/15*100));
+  $("g-bar").style.width = prog + "%"; $("g-bar").style.background = g.on ? "var(--green)" : "var(--brass)";
+  $("g-txt").textContent = g.on ? "Bitcoin está un " + nf(g.dist_pct,1) + "% por encima de su media." : "A Bitcoin le falta un " + nf(Math.abs(g.dist_pct),1) + "% para superar su media y abrir la compuerta.";
+  chartBtc(d); race(d);
+  const cols = ["#2fe08c","#d9a24a","#6fb8ff","#c98bff","#ff9d5c"];
+  $("alloc").innerHTML = pos.map((p,i) => `<div style="width:${p.pct}%;background:${cols[i%5]}" title="${esc(p.s)} ${nf(p.pct,1)}%">${p.pct>7?esc(p.s)+" "+nf(p.pct,0)+"%":""}</div>`).join("") +
+    `<div style="flex:1;background:#3a3f49;color:#e7e2d6">USDT ${nf(100-c.expo_pct,0)}%</div>`;
+  $("hold").innerHTML = pos.length ? `<table><thead><tr><th>Moneda</th><th class="r">Peso</th><th class="r">Valor</th><th class="r">Precio de compra</th><th class="r">Precio ahora</th><th class="r">Resultado</th></tr></thead><tbody>` +
+    pos.map(p => `<tr><td class="m"><b style="color:var(--ink)">${esc(p.s)}</b></td><td class="r">${nf(p.pct,1)}%</td><td class="r">${usd(p.valor,2)}</td><td class="r m">${px(p.entrada)}</td><td class="r m">${px(p.precio)}</td><td class="r ${p.pnl_pct>0?"up":p.pnl_pct<0?"down":""}">${pct(p.pnl_pct,2)}</td></tr>`).join("") + "</tbody></table>"
+    : `<div class="empty"><b>Sin posiciones abiertas</b>Todo el capital está en USDT, esperando a que se abra la compuerta.</div>`;
+  $("ev-sub").textContent = d.historial.length ? "Resultado acumulado desde el " + fdate(d.historial[0].d) + ", " + d.historial.length + " día" + (d.historial.length==1?"":"s") + " registrado" + (d.historial.length==1?"":"s") + "." : "Resultado acumulado desde que empezó a correr.";
+  chartEq(d);
+  const lado = {BUY:"Compra",SELL:"Venta"}, mot = {ENTRADA:"entró a la cartera",SALIDA:"salió de la cartera",REBALANCEO:"ajuste de peso",KILL_SWITCH:"freno de emergencia",HALTED:"bot detenido",LIQUIDACION:"salida manual"};
+  $("ops").innerHTML = d.operaciones.length ? `<table><thead><tr><th>Fecha</th><th>Operación</th><th>Moneda</th><th class="r">Monto</th><th class="r">Precio</th><th>Motivo</th></tr></thead><tbody>` +
+    d.operaciones.map(o => `<tr><td class="m">${fdate(o.t.slice(0,10))}</td><td class="${o.lado==="BUY"?"up":"down"}">${lado[o.lado]||o.lado}</td><td class="m">${esc(o.s)}</td><td class="r">${usd(o.usd,2)}</td><td class="r m">${px(o.precio)}</td><td>${mot[o.motivo]||esc(o.motivo)}</td></tr>`).join("") + "</tbody></table>" +
+    (d.n_operaciones > d.operaciones.length ? `<p style="margin-top:10px;font-size:13px;color:var(--mute)">Se muestran las últimas ${d.operaciones.length} de ${d.n_operaciones}.</p>` : "")
+    : `<div class="empty"><b>Todavía no ha operado</b>La primera compra llegará cuando Bitcoin cierre sobre su media de ${P.media_regimen} días y haya monedas en tendencia.</div>`;
+  const top = d.ranking.filter(x => x.tendencia && x.mom>0).slice(0,P.top).map(x => x.s);
+  $("rules").innerHTML = [
+    ["01","La compuerta",`Si Bitcoin cierra bajo su media de ${P.media_regimen} días, todo a USDT.`, g.on ? "Hoy: abierta" : "Hoy: cerrada (" + pct(g.dist_pct,1) + ")"],
+    ["02","La selección",`Las ${P.top} monedas con más subida en ${P.momentum} días, si siguen sobre su media de ${P.media_tendencia} días. De ${P.universo} en total.`, top.length ? "Liderarían: " + top.join(", ") : "Hoy ninguna cumple ambas condiciones"],
+    ["03","El reparto",`Más volátil, menos dinero. Tope de ${P.tope_pct}% por moneda. Sin apalancamiento.`, "Invertido: " + nf(c.expo_pct,0) + "%"],
+    ["04","El relevo y el freno",`La selección se repite cada semana. Si la cartera cae ${P.freno_pct}% desde su máximo, vende todo y se detiene.`, "Caída actual: " + pct(c.caida_pct,1)]
+  ].map(r => `<div class="rule"><div class="n">REGLA ${r[0]}</div><h3>${r[1]}</h3><p>${r[2]}</p><div class="now">${esc(r[3])}</div></div>`).join("");
+  const bt = d.backtest, ym = Math.max(...bt.por_anio.map(y => Math.abs(y[1])));
+  $("years").innerHTML = bt.por_anio.map(y => `<div class="y ${y[1]<0?"neg":""}"><span class="v">${pct(y[1],0)}</span><i style="height:${Math.max(2,Math.abs(y[1])/ym*120)}px"></i><span>${y[0]}</span></div>`).join("");
+  $("bt").innerHTML = `<div><div class="k mono" style="font-size:12px;letter-spacing:.14em;color:var(--mute)">${esc(bt.periodo).toUpperCase()}</div><div class="big up">${pct(bt.retorno_anual_pct,1)}</div><div style="font-size:13px;color:var(--mute)">retorno anual en el backtest, con comisiones</div></div>` +
+    `<div class="row"><span>Caída máxima</span><span>${pct(bt.caida_max_pct,1)}</span></div><div class="row"><span>Operaciones ganadoras</span><span>${nf(bt.aciertos_pct,1)}%</span></div>` +
+    `<div class="row"><span>Ganancia media / pérdida media</span><span>${nf(bt.payoff,1)}×</span></div><div class="row"><span>Mediana de 216 variantes</span><span>${pct(bt.mediana_variantes_pct,1)}</span></div>`;
+  $("foot").textContent = "Datos del " + fdate(d.asof) + " · generado " + gen.toLocaleString("es-CO") + " · modo " + (real ? "dinero real" : "simulación");
+}
+
+function conexion(c, live){
+  const n = DATA.paper ? DATA.paper.n_operaciones : 0;
+  $("con-warn").innerHTML = (n === 0 ? "<b>La simulación todavía no ha hecho ninguna operación.</b> Aún no hay ni un solo resultado fuera del backtest. Lo prudente es dejarla correr varias semanas con la compuerta abierta antes de conectar dinero. " : "") +
+    "<b>Riesgos que debes aceptar:</b> puedes perder dinero; GitHub puede retrasar o fallar una ejecución; y como el repositorio es público, cualquiera podrá ver en qué monedas estás (los montos van ocultos por defecto). Empieza con una cantidad que puedas perder.";
+  if(c && c.pasos && c.pasos.length){
+    $("con-checks").innerHTML = c.pasos.map(p => `<div class="chk ${p.ok?"ok":"no"}"><i>${p.ok?"✓":"✕"}</i><div>${esc(p.nombre)}<small>${esc(p.detalle)}</small></div></div>`).join("") +
+      `<div style="font-size:13px;color:var(--mute);margin-top:6px">Probado el ${new Date(c.probado_utc).toLocaleString("es-CO")}. ${c.listo ? "Todo listo para el paso 5." : "Corrige lo marcado y vuelve a ejecutar la prueba."}</div>`;
+    const geo = c.pasos.find(p => p.nombre.indexOf("Binance responde") === 0 && !p.ok && /451|403|región/.test(p.detalle));
+    if(geo) $("con-checks").insertAdjacentHTML("afterbegin", `<div class="note bad" style="margin:0 0 6px"><b>Binance no acepta operar desde los servidores de GitHub.</b> Están en Estados Unidos y Binance bloquea esa región (error 451). La simulación no se ve afectada porque solo lee precios públicos, pero para dinero real el bot tiene que ejecutarse desde un servidor fuera de EE.UU. Hasta resolverlo, el modo real no puede operar y no conviene activarlo.</div>`);
+    const ok = k => c.pasos.some(p => p.nombre.indexOf(k) === 0 && p.ok);
+    if(ok("Las claves son válidas")){ $("st1").classList.add("done"); $("st2").classList.add("done"); }
+    else if(ok("Claves guardadas")) $("st2").classList.add("done");
+    if(ok("USDT suficiente")) $("st3").classList.add("done");
+    if(c.listo) $("st4").classList.add("done");
+  }
+  if(live) $("st5").classList.add("done");
+}
+
+function setMode(m){ if(!DATA[m]) return; MODE = m; $("tab-paper").classList.toggle("on", m==="paper"); $("tab-live").classList.toggle("on", m==="live"); render(); }
+$("tab-paper").onclick = () => setMode("paper"); $("tab-live").onclick = () => setMode("live");
+$("race-more").onclick = () => { ALL = !ALL; race(DATA[MODE]); };
+
+Promise.all([get("dashboard.json"), get("dashboard_live.json"), get("conexion.json")]).then(([p, l, c]) => {
+  DATA.paper = p; DATA.live = l;
+  if(l){ const b = $("tab-live"); b.disabled = false; b.title = ""; }
+  if(!p && !l){ const e = $("err"); e.style.display = "block"; e.innerHTML = "<b>No se pudieron leer los datos del bot.</b> El panel los toma de la rama <span class='mono'>paper-state</span>; aparecen tras la primera ejecución diaria con esta versión. Revisa la pestaña Actions del repositorio.";
+    $("headline").textContent = "Sin datos todavía"; $("upd").textContent = "Sin datos"; conexion(c, false); return; }
+  setMode(l && qs.get("modo") !== "paper" ? "live" : "paper"); conexion(c, !!l);
+});
+})();
+</script>
+</body>
+</html>
