@@ -1,4 +1,4 @@
-[2026-11-13 00:34:43] [INFO ]   [ROT] el cierre 2026-11-12 ya fue procesado — nada que hacer
+[2026-11-13 06:36:45] [INFO ]   [ROT] el cierre 2026-11-12 ya fue procesado — nada que hacer
 
   ROTACION — estado (activo)
   Capital inicial: $1000.00   Equity: $1000.00   P&L: +0.00%   DD desde pico: 0.0%
