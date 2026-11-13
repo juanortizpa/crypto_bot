@@ -13,6 +13,7 @@ Solo usa la libreria estandar de Python. Comandos:
   python ejecutor.py configurar   pide las claves y las guarda en este equipo
   python ejecutor.py prueba       comprueba la conexion (solo lectura) y publica el resultado
   python ejecutor.py ciclo        ejecuta el ciclo del dia (lo que corre la tarea programada)
+  python ejecutor.py ip           muestra tu IP publica (la que Binance exige en la lista de IP de confianza)
   python ejecutor.py estado       muestra la cartera que gestiona el bot
   python ejecutor.py ciclo --simulado   recorre el ciclo con precios reales pero SIN enviar ordenes
 
@@ -32,6 +33,22 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+import re
+import socket
+
+# Binance valida la IP de origen de cada orden contra la lista de IP de confianza
+# de la clave. Se fuerza IPv4 hacia Binance (y hacia el servicio que dice tu IP)
+# para que la IP que ve sea siempre una sola, la que anotas en la lista.
+_getaddrinfo = socket.getaddrinfo
+
+
+def _getaddrinfo_v4(host, port, family=0, type=0, proto=0, flags=0):
+    if isinstance(host, str) and host.endswith(("binance.com", "ipify.org")):
+        family = socket.AF_INET
+    return _getaddrinfo(host, port, family, type, proto, flags)
+
+
+socket.getaddrinfo = _getaddrinfo_v4
 
 VERSION = 1
 REPO = os.environ.get("BOT_REPO", "juanortizpa/crypto_bot")
@@ -316,6 +333,29 @@ def configurar():
     print(f"\nGuardado en {CONFIG} (solo tu usuario puede leerlo). Ahora ejecuta:  python ejecutor.py prueba\n")
 
 
+def explicar_rechazo(r):
+    """Traduce el rechazo de Binance; si es por IP, dice cual IP vio Binance."""
+    msg = str(r.get("msg", r)) if isinstance(r, dict) else str(r)
+    ip = re.search(r"request ip:\s*([0-9a-fA-F.:]+)", msg)
+    if isinstance(r, dict) and r.get("code") == -2015:
+        if ip:
+            return (f"Binance rechazo la clave: o la IP {ip.group(1)} no esta en la lista de IP de confianza, o falta algun permiso. "
+                    f"Agrega {ip.group(1)} en la clave (Restringir acceso a IP de confianza).")
+        return "Binance rechazo la clave: revisa la lista de IP de confianza y los permisos."
+    return f"rechazadas: {msg[:160]}"
+
+
+def mostrar_ip():
+    """La IP publica (IPv4) desde la que Binance vera tus ordenes."""
+    code, ip = http("GET", "https://api.ipify.org?format=json")
+    if code != 200 or not isinstance(ip, dict):
+        sys.exit("No se pudo averiguar la IP: revisa tu conexion a internet.")
+    print(f"\nTu IP publica ahora es:  {ip['ip']}\n")
+    print("Es la que debes pegar en Binance (Restringir acceso a IP de confianza).")
+    print("Hazlo con el celular conectado a la red desde la que va a operar (por ejemplo el WiFi de tu casa).")
+    print("Si algun dia cambia (reinicias el router, usas datos moviles), el bot lo avisara y habra que actualizarla.\n")
+
+
 def prueba():
     cfg = cargar_config()
     bn = Binance(cfg["binance_key"], cfg["binance_secret"])
@@ -329,7 +369,7 @@ def prueba():
     code, _ = bn.publico("/api/v3/ping")
     if paso("Binance responde desde tu celular", code == 200, f"HTTP {code}" + (" (Binance bloquea esta ubicacion)" if code in (451, 403) else "")):
         code, acct = bn.firmado("GET", "/api/v3/account", {"omitZeroBalances": "true"})
-        if paso("Las claves son válidas", code == 200, "Binance acepto la firma" if code == 200 else f"rechazadas: {acct}"):
+        if paso("Las claves son válidas", code == 200, "Binance acepto la firma" if code == 200 else explicar_rechazo(acct)):
             can = bool(acct.get("canTrade"))
             paso("Permiso de operar en Spot", can, "activo" if can else "activa 'Habilitar trading Spot y Margin' en la clave")
             usdt = sum(float(b["free"]) for b in acct.get("balances", []) if b["asset"] == "USDT")
@@ -469,6 +509,8 @@ if __name__ == "__main__":
             configurar()
         elif cmd == "prueba":
             prueba()
+        elif cmd == "ip":
+            mostrar_ip()
         elif cmd == "estado":
             mostrar_estado()
         elif cmd == "ciclo":
