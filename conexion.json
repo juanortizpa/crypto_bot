@@ -1,5 +1,5 @@
 {
- "probado_utc": "2026-11-13T02:42:17+00:00",
+ "probado_utc": "2026-11-13T19:50:36+00:00",
  "origen": "celular",
  "pasos": [
   {
@@ -9,23 +9,8 @@
   },
   {
    "nombre": "Las claves son válidas",
-   "ok": true,
-   "detalle": "Binance acepto la firma"
-  },
-  {
-   "nombre": "Permiso de operar en Spot",
-   "ok": true,
-   "detalle": "activo"
-  },
-  {
-   "nombre": "USDT suficiente para el capital configurado",
-   "ok": true,
-   "detalle": "hay al menos 11 USDT libres"
-  },
-  {
-   "nombre": "Retiros desactivados en la clave",
-   "ok": true,
-   "detalle": "correcto"
+   "ok": false,
+   "detalle": "Binance rechazo la clave: revisa la lista de IP de confianza y los permisos."
   },
   {
    "nombre": "Lee la orden diaria de GitHub",
@@ -33,5 +18,5 @@
    "detalle": "orden del 2026-11-12, modo paper"
   }
  ],
- "listo": true
+ "listo": false
 }
