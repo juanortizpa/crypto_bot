@@ -209,7 +209,7 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-si
         <ol><li>Entra a Binance → tu perfil → <b>Gestión de API</b>.</li><li>Crea una clave <b>generada por el sistema</b> y ponle un nombre, por ejemplo <span class="mono">bot-rotacion</span>.</li>
           <li>En <b>Editar restricciones</b> activa <b>Habilitar trading Spot y Margin</b>.</li><li>Deja <b>desactivado</b> «Habilitar retiros». Con eso la clave puede comprar y vender, pero no sacar dinero.</li>
           <li>Copia la <b>API Key</b> y la <b>Secret Key</b>. La secreta solo se muestra una vez.</li></ol>
-        <div class="note">Si Binance te exige una lista de IP fijas para activar el trading, GitHub no puede cumplirla (sus servidores cambian de IP). En ese caso la conexión gratuita no es posible y el paso 4 lo mostrará.</div>
+        <div class="note">Si Binance te exige una lista de IP fijas para activar el trading, déjala en blanco hasta saber desde qué servidor operará el bot (paso 4).</div>
         <a class="btn" target="_blank" rel="noopener" href="https://www.binance.com/es/my/settings/api-management">Abrir Gestión de API en Binance</a></div>
       <div class="step" id="st2"><h3>Guarda las dos claves en GitHub</h3>
         <p>Crea dos «secretos» con estos nombres exactos y pega cada clave como valor. Una vez guardados nadie puede leerlos, ni siquiera tú: solo el bot al ejecutarse.</p>
@@ -370,6 +370,8 @@ function conexion(c, live){
   if(c && c.pasos && c.pasos.length){
     $("con-checks").innerHTML = c.pasos.map(p => `<div class="chk ${p.ok?"ok":"no"}"><i>${p.ok?"✓":"✕"}</i><div>${esc(p.nombre)}<small>${esc(p.detalle)}</small></div></div>`).join("") +
       `<div style="font-size:13px;color:var(--mute);margin-top:6px">Probado el ${new Date(c.probado_utc).toLocaleString("es-CO")}. ${c.listo ? "Todo listo para el paso 5." : "Corrige lo marcado y vuelve a ejecutar la prueba."}</div>`;
+    const geo = c.pasos.find(p => p.nombre.indexOf("Binance responde") === 0 && !p.ok && /451|403|región/.test(p.detalle));
+    if(geo) $("con-checks").insertAdjacentHTML("afterbegin", `<div class="note bad" style="margin:0 0 6px"><b>Binance no acepta operar desde los servidores de GitHub.</b> Están en Estados Unidos y Binance bloquea esa región (error 451). La simulación no se ve afectada porque solo lee precios públicos, pero para dinero real el bot tiene que ejecutarse desde un servidor fuera de EE.UU. Hasta resolverlo, el modo real no puede operar y no conviene activarlo.</div>`);
     const ok = k => c.pasos.some(p => p.nombre.indexOf(k) === 0 && p.ok);
     if(ok("Las claves son válidas")){ $("st1").classList.add("done"); $("st2").classList.add("done"); }
     else if(ok("Claves guardadas")) $("st2").classList.add("done");
