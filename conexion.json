@@ -1,16 +1,37 @@
 {
- "probado_utc": "2026-11-13T00:06:12+00:00",
+ "probado_utc": "2026-11-13T02:42:17+00:00",
+ "origen": "celular",
  "pasos": [
   {
-   "nombre": "Binance responde desde este servidor",
-   "ok": false,
-   "detalle": "HTTP 451: Binance bloquea la región de este servidor. {\n  \"code\": 0,\n  \"msg\": \"Service unavailable from a restricted location according to 'b. Eligibility' in https://www.binance.com/en/terms. Please contact custom"
+   "nombre": "Binance responde desde tu celular",
+   "ok": true,
+   "detalle": "HTTP 200"
   },
   {
-   "nombre": "Claves guardadas en GitHub",
-   "ok": false,
-   "detalle": "faltan los secretos BINANCE_API_KEY y/o BINANCE_API_SECRET"
+   "nombre": "Las claves son válidas",
+   "ok": true,
+   "detalle": "Binance acepto la firma"
+  },
+  {
+   "nombre": "Permiso de operar en Spot",
+   "ok": true,
+   "detalle": "activo"
+  },
+  {
+   "nombre": "USDT suficiente para el capital configurado",
+   "ok": true,
+   "detalle": "hay al menos 11 USDT libres"
+  },
+  {
+   "nombre": "Retiros desactivados en la clave",
+   "ok": true,
+   "detalle": "correcto"
+  },
+  {
+   "nombre": "Lee la orden diaria de GitHub",
+   "ok": true,
+   "detalle": "orden del 2026-11-12, modo paper"
   }
  ],
- "listo": false
+ "listo": true
 }
