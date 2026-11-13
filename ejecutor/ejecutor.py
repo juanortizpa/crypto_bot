@@ -62,6 +62,11 @@ UA = {"User-Agent": "bot-rotacion-ejecutor/1"}
 MIN_TRADE_USD = 10.0
 MIN_TRADE_FRAC = 0.02
 MAX_EDAD_ORDEN_DIAS = 3
+FALLOS = []          # rechazos o errores de red del ciclo en curso; si hay alguno, la orden NO se da por ejecutada
+
+
+class CicloFallido(Exception):
+    pass
 
 
 # ── utilidades ────────────────────────────────────────────────────────
@@ -256,8 +261,14 @@ def operar(bn, est, sym, lado, usd, precio, motivo, simulado):
         else:
             qty, neto = q, q * precio * 0.999
     else:
-        code, r = bn.firmado("POST", "/api/v3/order", params)
+        try:
+            code, r = bn.firmado("POST", "/api/v3/order", params)
+        except Exception as e:
+            FALLOS.append(f"sin conexion con Binance al enviar {lado} {sym}: {e}")
+            log(f"  ERROR DE RED {lado} {sym}: {e}")
+            return False
         if code != 200 or not isinstance(r, dict) or r.get("status") not in ("FILLED", "PARTIALLY_FILLED"):
+            FALLOS.append(f"orden {lado} {sym} rechazada: {explicar_rechazo(r)}")
             log(f"  ORDEN RECHAZADA {lado} {sym}: HTTP {code} {r}")
             return False
         qty = float(r["executedQty"])
@@ -421,39 +432,59 @@ def ciclo(simulado=False):
     est["pico"] = max(est["pico"], eq)
     caida = (eq / est["pico"] - 1) * 100
     freno = float(orden.get("freno_pct", 40))
-    if modo == "salir" and not est["detenido"]:
-        log("  SALIDA MANUAL: se vende todo a USDT y el bot se detiene")
-        liquidar(bn, est, precios, "LIQUIDACION", simulado)
-        est.update(detenido=True, motivo="salida manual: todo vendido a USDT")
-    elif not est["detenido"] and caida <= -freno:
-        log(f"  FRENO DE EMERGENCIA: caida {caida:.1f}% desde el maximo")
-        liquidar(bn, est, precios, "KILL_SWITCH", simulado)
-        est.update(detenido=True, motivo=f"freno de emergencia: caida {caida:.1f}%")
-    elif est["detenido"]:
-        log(f"  bot detenido ({est['motivo']}). Para reanudar borra {estado_path} con la cartera ya en USDT.")
-    else:
-        umbral = max(MIN_TRADE_USD, MIN_TRADE_FRAC * eq)
-        deltas = {s: pesos.get(s, 0.0) * eq - est["posiciones"].get(s, 0.0) * precios[s] for s in set(pesos) | set(est["posiciones"])}
-        for s, d in sorted(deltas.items(), key=lambda kv: kv[1]):           # primero ventas
-            actual = est["posiciones"].get(s, 0.0) * precios[s]
-            if d < 0 and (pesos.get(s, 0.0) == 0 or -d >= umbral):
-                operar(bn, est, s, "SELL", actual if pesos.get(s, 0.0) == 0 else -d, precios[s],
-                       "SALIDA" if pesos.get(s, 0.0) == 0 else "REBALANCEO", simulado)
-        for s, d in sorted(deltas.items(), key=lambda kv: -kv[1]):          # luego compras
-            if d >= umbral:
+    try:
+        if modo == "salir" and not est["detenido"]:
+            log("  SALIDA MANUAL: se vende todo a USDT y el bot se detiene")
+            n0 = len(FALLOS)
+            liquidar(bn, est, precios, "LIQUIDACION", simulado)
+            if len(FALLOS) == n0:                           # solo se detiene si de verdad vendio todo
+                est.update(detenido=True, motivo="salida manual: todo vendido a USDT")
+        elif not est["detenido"] and caida <= -freno:
+            log(f"  FRENO DE EMERGENCIA: caida {caida:.1f}% desde el maximo")
+            n0 = len(FALLOS)
+            liquidar(bn, est, precios, "KILL_SWITCH", simulado)
+            if len(FALLOS) == n0:
+                est.update(detenido=True, motivo=f"freno de emergencia: caida {caida:.1f}%")
+        elif est["detenido"]:
+            log(f"  bot detenido ({est['motivo']}). Para reanudar borra {estado_path} con la cartera ya en USDT.")
+        else:
+            umbral = max(MIN_TRADE_USD, MIN_TRADE_FRAC * eq)
+            deltas = {s: pesos.get(s, 0.0) * eq - est["posiciones"].get(s, 0.0) * precios[s] for s in set(pesos) | set(est["posiciones"])}
+            for s, d in sorted(deltas.items(), key=lambda kv: kv[1]):           # primero ventas
                 actual = est["posiciones"].get(s, 0.0) * precios[s]
-                operar(bn, est, s, "BUY", min(d, est["usdt"] * 0.995), precios[s],
-                       "ENTRADA" if actual < 1.0 else "REBALANCEO", simulado)
-        if not any(d < 0 and (pesos.get(s, 0.0) == 0 or -d >= umbral) or d >= umbral for s, d in deltas.items()):
-            log("  la cartera ya coincide con el objetivo: no se opera")
-    est["ultima_orden"] = orden["asof"]
+                if d < 0 and (pesos.get(s, 0.0) == 0 or -d >= umbral):
+                    operar(bn, est, s, "SELL", actual if pesos.get(s, 0.0) == 0 else -d, precios[s],
+                           "SALIDA" if pesos.get(s, 0.0) == 0 else "REBALANCEO", simulado)
+            for s, d in sorted(deltas.items(), key=lambda kv: -kv[1]):          # luego compras
+                if d >= umbral:
+                    actual = est["posiciones"].get(s, 0.0) * precios[s]
+                    operar(bn, est, s, "BUY", min(d, est["usdt"] * 0.995), precios[s],
+                           "ENTRADA" if actual < 1.0 else "REBALANCEO", simulado)
+            if not any(d < 0 and (pesos.get(s, 0.0) == 0 or -d >= umbral) or d >= umbral for s, d in deltas.items()):
+                log("  la cartera ya coincide con el objetivo: no se opera")
+    except Exception as e:                              # p. ej. se cayo la red a mitad de camino
+        FALLOS.append(f"ciclo interrumpido: {e}")
+        log(f"  ERROR: {e}")
+    ok = not FALLOS
     eq = valor(est, precios)
+    if ok:                                              # solo se da por ejecutada la orden si no hubo ningun fallo
+        est["ultima_orden"] = orden["asof"]
+        est["historial"] = [h for h in est["historial"] if h["d"] != orden["asof"]][-500:]
+        est["historial"].append({"d": orden["asof"], "equity": round(eq, 2), "usdt": round(est["usdt"], 2), "on": bool(orden.get("regimen_on"))})
     est["pico"] = max(est["pico"], eq)
-    est["historial"] = [h for h in est["historial"] if h["d"] != orden["asof"]][-500:]
-    est["historial"].append({"d": orden["asof"], "equity": round(eq, 2), "usdt": round(est["usdt"], 2), "on": bool(orden.get("regimen_on"))})
     est["operaciones"] = est["operaciones"][-300:]
-    escribir_json(estado_path, est, privado=True)
+    est["precios"] = {s: precios[s] for s in est["posiciones"] if s in precios}      # para informar bien si luego hay un error
+    escribir_json(estado_path, est, privado=True)        # se guarda SIEMPRE: lo ya ejecutado en Binance no se puede perder
     log(f"  cartera: {eq:.2f} USDT ({(eq / est['capital_inicial'] - 1) * 100:+.2f}%) · posiciones {sorted(est['posiciones']) or 'ninguna'}")
+    if not ok:
+        motivo = " | ".join(dict.fromkeys(FALLOS))[:300]
+        log(f"  CICLO INCOMPLETO: {motivo}")
+        log("  La orden sigue pendiente: se reintentara en la proxima revision (cada 3 horas).")
+        if not simulado:
+            rep = reporte(est, precios, cfg, "error")
+            rep["ejecutor"]["motivo"] = motivo
+            publicar(cfg, "live.json", rep, "error")
+        raise CicloFallido(motivo)
     if not simulado:
         publicar(cfg, "live.json", reporte(est, precios, cfg, "detenido" if est["detenido"] else "ok"), "ejecucion")
 
@@ -519,6 +550,9 @@ if __name__ == "__main__":
             print(__doc__)
     except KeyboardInterrupt:
         pass
+    except CicloFallido as e:
+        log(f"ERROR: {e}")
+        sys.exit(1)
     except Exception as e:
         log(f"ERROR: {e}")
         if cmd == "ciclo" and "--simulado" not in sys.argv:
@@ -526,7 +560,12 @@ if __name__ == "__main__":
             est = leer_json(ESTADO)
             if est and cfg.get("github_token"):
                 try:
-                    publicar(cfg, "live.json", dict(reporte(est, {s: 0.0 for s in est["posiciones"]}, cfg, "error"),
+                    pr = dict(est.get("precios") or {})
+                    for s_ in est["posiciones"]:
+                        if s_ not in pr:
+                            c_ = est["costo"].get(s_)
+                            pr[s_] = c_[1] / c_[0] if c_ and c_[0] > 0 else 0.0
+                    publicar(cfg, "live.json", dict(reporte(est, pr, cfg, "error"),
                                                     ejecutor={"estado": "error", "motivo": str(e)[:200], "ultima_orden": est.get("ultima_orden")}), "error")
                 except Exception:
                     pass
