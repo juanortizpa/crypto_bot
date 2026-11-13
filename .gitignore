@@ -158,3 +158,9 @@ model_d_training/results/backup_*/
 
 # Datos historicos del backtest
 backtest/data/
+
+# Proyecto de video explicativo
+video_bot/
+
+# Estado local de la estrategia de rotacion (el real vive en la rama paper-state)
+state/rotation_state*.json

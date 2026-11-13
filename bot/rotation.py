@@ -35,9 +35,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from bot.logger import log
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
-STATE_PATH = os.path.join(ROOT, "state", "rotation_state.json")
-TRADES_CSV = os.path.join(ROOT, "reports", "rotation_trades.csv")
-EQUITY_CSV = os.path.join(ROOT, "reports", "rotation_equity.csv")
+# ROT_MODE=live usa archivos propios (sufijo _live): la cartera real nunca se
+# mezcla con la simulada, y ambas pueden correr en paralelo.
+MODE = "live" if os.environ.get("ROT_MODE", "paper").lower() == "live" else "paper"
+SUF = "_live" if MODE == "live" else ""
+STATE_PATH = os.path.join(ROOT, "state", f"rotation_state{SUF}.json")
+TRADES_CSV = os.path.join(ROOT, "reports", f"rotation_trades{SUF}.csv")
+EQUITY_CSV = os.path.join(ROOT, "reports", f"rotation_equity{SUF}.csv")
 
 # Parametros de la estrategia. NO se optimizaron al mejor resultado: son los
 # valores por defecto fijados antes de mirar la validacion, y 216 variantes
@@ -210,6 +214,16 @@ def step(execute=False, refresh=True):
     if execute and os.environ.get("AUTO_EXECUTE", "False").lower() != "true":
         raise RuntimeError("--execute requiere AUTO_EXECUTE=True en .env")
     st = _load_state()
+    # salida manual (ROT_LIQUIDAR=si): vender todo a USDT y detenerse
+    if os.environ.get("ROT_LIQUIDAR", "").lower() in ("si", "sí", "1", "true", "yes"):
+        syms = sorted(st["holdings"])
+        if syms:
+            _liquidate(st, _prices(syms), execute, "LIQUIDACION")
+        st["halted"] = True
+        st["halt_reason"] = "salida manual: todo vendido a USDT"
+        _save_state(st)
+        log("WARN", "  [ROT] salida manual: posiciones vendidas y bot detenido")
+        return st
     tgt = compute_targets(refresh=refresh)
     if st.get("last_asof") == tgt["asof"] and not st["halted"]:
         log("INFO", f"  [ROT] el cierre {tgt['asof']} ya fue procesado — nada que hacer")
@@ -342,7 +356,13 @@ def cli(argv):
         run_loop(execute=execute)
     elif sub == "backtest":
         backtest_report()
+    elif sub == "dashboard":
+        from bot.rotation_panel import export_dashboard
+        export_dashboard()
+    elif sub == "conexion":
+        from bot.rotation_panel import conexion
+        conexion()
     elif sub == "reset":
         reset(hard="--hard" in argv)
     else:
-        print("  Uso: python bot_crypto.py rotation status|signal|once|run|backtest|reset [--execute] [--hard]")
+        print("  Uso: python bot_crypto.py rotation status|signal|once|run|backtest|dashboard|conexion|reset [--execute] [--hard]")
